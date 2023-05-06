@@ -1,3 +1,5 @@
+**Predict fan engagement with baseball player digital content**
+
 A player hits a walk-off home run. A pitcher throws a no-hitter. A team gets red hot going into the Postseason. We know some of the catalysts that increase baseball fan interest. Now Major League Baseball (MLB) and Google Cloud want the Kaggle community’s help to identify the many other factors which pique supporter engagement and create deeper relationships betweens players and fans.
 
 The sport has a long history of being numbers-driven. Nearly every day from at least April through October, baseball fans watch, read, and search for information about players. Which individuals they seek can depend on player performance, team standings, popularity, among other, currently unknown factors—which could be better understood thanks to data science.
