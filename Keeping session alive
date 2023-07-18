@@ -81,3 +81,27 @@ spark.streams.awaitAnyTermination()
 // Cancel the keep-alive task and timer when Spark job finishes
 keepAliveTask.cancel()
 timer.cancel()
+=======
+
+
+import org.apache.spark.sql.SparkSession
+
+val spark = SparkSession
+  .builder()
+  .appName("N-line Input Format Example")
+  .getOrCreate()
+
+val filePath = "/path/to/input/file.txt" // Replace with your input file path
+val numLinesPerRecord = 3 // Number of lines per record
+
+val rdd = spark.sparkContext.textFile(filePath)
+
+val recordsRDD = rdd
+  .zipWithIndex()
+  .groupBy { case (line, index) => index / numLinesPerRecord }
+  .map { case (_, lines) => lines.map(_._1) }
+  .map(lines => lines.mkString("\n"))
+
+val df = spark.createDataFrame(recordsRDD.map(Tuple1.apply)).toDF("record")
+
+df.show(false)
