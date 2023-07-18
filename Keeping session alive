@@ -32,3 +32,52 @@ spark.streams.awaitAnyTermination()
 
 // Cancel the keep-alive task when Spark job finishes
 keepAliveTask.cancel()
+
+
+
+==========
+
+
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+import scala.util.Try
+import java.util.{Timer, TimerTask}
+
+val spark = SparkSession
+  .builder()
+  .appName("Spark Snowflake Keep-Alive Example")
+  .config("spark.driver.extraClassPath", "/path/to/snowflake-jdbc.jar")
+  .getOrCreate()
+
+val options = Map(
+  "sfURL" -> "<snowflake_url>",
+  "sfDatabase" -> "<database_name>",
+  "sfWarehouse" -> "<warehouse_name>",
+  "sfSchema" -> "<schema_name>",
+  "sfRole" -> "<role_name>",
+  "sfUser" -> "<user_name>",
+  "sfPassword" -> "<password>"
+)
+
+// Create a Snowflake connection
+spark.sql("CREATE TEMPORARY TABLE snowflakeTable USING net.snowflake.spark.snowflake OPTIONS (" +
+  options.map { case (key, value) => s"$key '$value'" }.mkString(",") +
+  ")")
+
+val timer = new Timer()
+
+val keepAliveTask = new TimerTask() {
+  def run(): Unit = {
+    Try(spark.sql("SELECT 1").collect()) // Execute the lightweight query
+  }
+}
+
+// Schedule the task to run every 5 minutes (300000 milliseconds)
+timer.schedule(keepAliveTask, 0L, 300000L)
+
+// Wait for termination
+spark.streams.awaitAnyTermination()
+
+// Cancel the keep-alive task and timer when Spark job finishes
+keepAliveTask.cancel()
+timer.cancel()
