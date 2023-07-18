@@ -1,0 +1,34 @@
+import org.apache.spark.sql.{SparkSession, SnowflakeConnectorUtils}
+import scala.concurrent.duration._
+
+val spark = SparkSession
+  .builder()
+  .appName("Spark Snowflake Keep-Alive Example")
+  .config("spark.driver.extraClassPath", "/path/to/snowflake-jdbc.jar")
+  .getOrCreate()
+
+val options = Map(
+  "sfURL" -> "<snowflake_url>",
+  "sfDatabase" -> "<database_name>",
+  "sfWarehouse" -> "<warehouse_name>",
+  "sfSchema" -> "<schema_name>",
+  "sfRole" -> "<role_name>",
+  "sfUser" -> "<user_name>",
+  "sfPassword" -> "<password>"
+)
+
+// Create a Snowflake connection
+spark.sql("CREATE TEMPORARY TABLE snowflakeTable USING net.snowflake.spark.snowflake OPTIONS (" +
+  options.map { case (key, value) => s"$key '$value'" }.mkString(",") +
+  ")")
+
+// Schedule a task to execute a lightweight query every 5 minutes
+val keepAliveTask = spark.sparkContext.scheduler.schedule(Duration.Zero, 5.minutes) {
+  SnowflakeConnectorUtils.runQuery("SELECT 1", options)
+}
+
+// Wait for termination
+spark.streams.awaitAnyTermination()
+
+// Cancel the keep-alive task when Spark job finishes
+keepAliveTask.cancel()
