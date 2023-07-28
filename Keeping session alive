@@ -16,3 +16,21 @@ val df2 = df.withColumn("line", regexp_replace(df("line"), "\n", " "))
 
 // Show the result
 df2.show()
+
+import org.apache.spark.sql.SparkSession
+
+// Create a Spark Session
+val spark = SparkSession.builder.appName("find_replace_18digit").getOrCreate()
+
+// Read the text file into an RDD
+val rdd = spark.sparkContext.textFile("path_to_your_file.txt")
+
+// Define the regular expression for an 18-digit number
+val pattern = "\\b\\d{18}\\b".r
+
+// Use map to replace 18-digit numbers
+val rdd2 = rdd.map(line => pattern.replaceAllIn(line, "REPLACED"))
+
+// Collect and print the result
+rdd2.collect().foreach(println)
+
