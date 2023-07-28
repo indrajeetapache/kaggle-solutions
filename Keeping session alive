@@ -1,1 +1,18 @@
 
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.regexp_replace
+
+// Create a Spark Session
+val spark = SparkSession.builder.appName("find_replace_newline").getOrCreate()
+
+// Set encoding to ISO-8859-1
+spark.sqlContext.setConf("spark.sql.files.sourceEncoding", "ISO-8859-1")
+
+// Read the text file
+val df = spark.read.textFile("path_to_your_file.txt").toDF("line")
+
+// Replace newline character with a specific character (for example, space)
+val df2 = df.withColumn("line", regexp_replace(df("line"), "\n", " "))
+
+// Show the result
+df2.show()
