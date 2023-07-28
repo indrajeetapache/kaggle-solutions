@@ -40,16 +40,17 @@ rdd2.collect().foreach(println)
 import org.apache.spark.sql.SparkSession
 
 // Create a Spark Session
-val spark = SparkSession.builder.appName("find_replace_18digit_SOH").getOrCreate()
+val spark = SparkSession.builder.appName("find_replace_18digit_newline").getOrCreate()
 
 // Read the text file into an RDD
 val rdd = spark.sparkContext.textFile("path_to_your_file.txt")
 
-// Define the regular expression for an 18-digit number followed by a SOH character
-val pattern = "\\b\\d{18}\\u0001\\b".r
+// Define the regular expression for an 18-digit number followed by a newline character
+val pattern = "\\b\\d{18}\\n\\b".r
 
-// Use map to replace the sequence of 18-digit number followed by a SOH character
-val rdd2 = rdd.map(line => pattern.replaceAllIn(line, "REPLACED"))
+// Use map to replace the sequence of 18-digit number followed by a newline character
+val rdd2 = rdd.map(line => pattern.replaceAllIn(line, "\n"))
 
 // Collect and print the result
 rdd2.collect().foreach(println)
+
