@@ -1,56 +1,24 @@
-
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.regexp_replace
-
-// Create a Spark Session
-val spark = SparkSession.builder.appName("find_replace_newline").getOrCreate()
-
-// Set encoding to ISO-8859-1
-spark.sqlContext.setConf("spark.sql.files.sourceEncoding", "ISO-8859-1")
-
-// Read the text file
-val df = spark.read.textFile("path_to_your_file.txt").toDF("line")
-
-// Replace newline character with a specific character (for example, space)
-val df2 = df.withColumn("line", regexp_replace(df("line"), "\n", " "))
-
-// Show the result
-df2.show()
-
 import org.apache.spark.sql.SparkSession
 
-// Create a Spark Session
-val spark = SparkSession.builder.appName("find_replace_18digit").getOrCreate()
+object Main {
+  def main(args: Array[String]): Unit = {
 
-// Read the text file into an RDD
-val rdd = spark.sparkContext.textFile("path_to_your_file.txt")
+    // Initialize SparkSession
+    val spark = SparkSession.builder.appName("Spark Scala SOH Replacement").getOrCreate()
 
-// Define the regular expression for an 18-digit number
-val pattern = "\\b\\d{18}\\b".r
+    // Load the text file as a single string
+    val textFile = spark.sparkContext.wholeTextFiles("path_to_your_file").values
 
-// Use map to replace 18-digit numbers
-val rdd2 = rdd.map(line => pattern.replaceAllIn(line, "REPLACED"))
+    // Define the string to find and its replacement
+    val toFind = "SOH\n         "
+    val replacement = "SOH\"\n        \""
 
-// Collect and print the result
-rdd2.collect().foreach(println)
-============
+    // Replace the string
+    val replacedTextFile = textFile.map(content => content.replaceAll(toFind, replacement))
 
-
-
-import org.apache.spark.sql.SparkSession
-
-// Create a Spark Session
-val spark = SparkSession.builder.appName("find_replace_18digit_newline").getOrCreate()
-
-// Read the text file into an RDD
-val rdd = spark.sparkContext.textFile("path_to_your_file.txt")
-
-// Define the regular expression for an 18-digit number followed by a newline character
-val pattern = "\\b\\d{18}\\n\\b".r
-
-// Use map to replace the sequence of 18-digit number followed by a newline character
-val rdd2 = rdd.map(line => pattern.replaceAllIn(line, "\n"))
-
-// Collect and print the result
-rdd2.collect().foreach(println)
-
+    // Save the result to a new text file
+    replacedTextFile.saveAsTextFile("path_to_output_file")
+    
+    spark.stop()
+  }
+}
