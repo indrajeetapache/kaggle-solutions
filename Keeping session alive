@@ -1,25 +1,34 @@
+#!/bin/bash
 
-1. **Feature Story Delivery**: I have taken great pride in my ability to consistently meet all deadlines. Regardless of the pressure or complexity of the task at hand, I have managed to complete and deliver all assigned features within the set timelines. I believe that my commitment to maintaining a steady workflow has positively influenced our project progress and overall productivity.
+# Define the function
+my_function() {
+    echo "Starting process id: $$"
+    sleep $1
+    echo "Finished process id: $$"
+}
 
-2. **Quality of Delivery**: Alongside meeting the deadlines, I have striven to maintain exceptional quality in all my deliverables. I have consistently ensured my work is meticulously researched, comprehensive, and in compliance with our established standards. This attention to detail has reduced bugs and rework, leading to improved user experiences and a solid product reputation.
+# Declare an array to store the PIDs
+declare -a pidArray
 
-3. **Self-Development**: I have remained dedicated to personal growth and skill development, and this commitment has manifested itself in the expanded skills and proficiency that I bring to our team. My aim to adapt to and learn new technologies and methodologies reflects my desire to stay current with industry trends and to continually add value to our team.
+# Call the function multiple times in the background and save PIDs
+for i in {1..5}
+do
+    my_function $i &  # Call the function in the background
+    pidArray+=($!)    # Save the PID
+done
 
-4. **Additional Contributions**: Beyond the scope of my assigned responsibilities, I have willingly taken on additional tasks to enhance our team's output and efficiency. This proactive approach has, I believe, led to improved team cohesion and has played a significant part in enabling us to meet and exceed our targets well ahead of schedule.
+# Wait for all of the background processes to finish
+for pid in ${pidArray[*]}; do
+    wait $pid
+    echo "Process $pid has completed."
+done
 
-====
-I've been dedicated to on-time delivery, supporting innovative initiatives, and continually enhancing our solutions, products, and services while maintaining high-quality standards. My efforts have contributed to efficient and timely project completion, the implementation of forward-thinking strategies, and quality improvements in our offerings, setting us on a strong path for future success. I am committed to fostering this culture of excellence and innovation moving forward.
+echo "All processes have completed."
+=========
 
-======
+my_function &  # Run the function in the background
+pid=$!  # Save the PID of the process
 
-As I strive for continuous professional growth within our organization, I seek opportunities to further develop my skills and make significant contributions to our team's success. Specifically, I'm interested in being more involved in framework projects, as I believe they will help me enhance my expertise and provide valuable experiences that contribute to my career advancement.
+=====
 
-Working on such projects will enable me to understand various aspects of our business in greater depth, stimulate intellectual growth, and provide me with a wider perspective that can be applied to future tasks and responsibilities.
-
-Furthermore, I would like to deepen my involvement in Selenium projects. I believe I have a lot to offer in this area and that I could contribute substantially to the organization's growth through my work on such projects. Selenium aligns with my skills and interests, and I am eager to leverage my expertise for the benefit of our team and organization.
-
-To support this growth, I would appreciate any available opportunities for professional development, training, or mentorship that could help me build these skills. I am committed to my professional development and look forward to continuing to grow and contribute to our organization.
-
-
-====
-Consistently delivering quality work on time, I've embraced innovation and self-development, including taking on extra responsibilities. I aspire to engage more with framework and Selenium projects to bolster my skill set. Committed to excellence and eager to learn, my focus is on contributing to and growing within our organization.
+wait $pid  # Wait for the process with PID = $pid to finish
