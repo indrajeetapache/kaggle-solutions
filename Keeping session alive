@@ -32,3 +32,34 @@ pid=$!  # Save the PID of the process
 =====
 
 wait $pid  # Wait for the process with PID = $pid to finish
+
+
+======
+
+Subject: Release of File Ingestion Framework Version 3.0 - Key Enhancements and Testing
+
+Dear Team,
+
+I am pleased to announce that the upcoming release of our File Ingestion Framework, Version 3.0, is scheduled to roll out on July 19, 2023. This version includes several critical enhancements designed to streamline our operations and improve user experiences.
+
+Key enhancements include:
+
+1. **Trigger File Logic Implementation:** This new logic allows for process initiation upon receiving a specific trigger file, increasing efficiency and allowing better control over the execution flow.
+
+2. **Control File Integration:** The integration of control files further enhances our data management capabilities. This functionality facilitates the tracking of file metadata and provides an overview of the data ingestion process, ensuring smoother and more controlled file ingestion.
+
+3. **Audit Columns:** We have added Audit Columns to our framework. This feature will provide detailed logs for each process, helping in tracking, debugging, and auditing purposes.
+
+Please note that these enhancements have been designed and implemented in a way that will not affect existing users. As of now, we have halted the auto-upgradation feature of our framework to ensure no disruptions to your current workflows.
+
+As part of our quality assurance process, we kindly ask that you engage in testing this new version from your end. We believe that your feedback is vital to making our framework as robust and efficient as possible.
+
+Please be sure to communicate any issues or challenges you encounter during the testing phase. Our development and support teams are on standby to address them promptly.
+
+The final production release of File Ingestion Framework Version 3.0 is scheduled for July 19, 2023. We appreciate your attention to this matter and look forward to your valuable input.
+
+Best Regards,
+
+[Your Name]
+[Your Position]
+[Your Contact Information]
