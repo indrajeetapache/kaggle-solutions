@@ -1,18 +1,14 @@
-Dear Team,
+#!/bin/bash
 
-I am writing to express my sincere appreciation for the extraordinary effort put forth by [team member's name] in enhancing our Data Quality and Mainframe Ingestion frameworks. Their contributions have been truly exemplary and have set a benchmark for dedication and technical expertise within our organization.
+# Define the function
+function check_zero {
+  if [ $1 -eq 0 ]; then
+    echo "The input is equal to zero."
+  else
+    echo "The input is not equal to zero."
+  fi
+}
 
-[Team member's name] has demonstrated an exceptional understanding of the complexities involved in these frameworks, which has been evident in their work. The recent enhancements made to accommodate Snowflake-related changes have had a profound positive impact on our operations and overall efficiency.
-
-Their diligence, self-motivation, and dedication have been remarkable and have not gone unnoticed. They have consistently exceeded expectations and taken the lead in ensuring that the modifications were seamlessly integrated into our systems. This level of detail and forethought has been invaluable to our team.
-
-I am truly grateful for [team member's name]'s contributions. Their work has not only improved our data quality and ingestion processes, but also our capacity to adapt and innovate. Thank you, [team member's name], for your hard work and dedication. Your efforts have significantly contributed to our team's success and are a prime example of what we can achieve when we bring our skills and passion to the table.
-
-Keep up the fantastic work!
-
-Best regards,
-
-[Your Name]
-
-
-
+# Call the function with an argument
+check_zero 10
+check_zero 0
