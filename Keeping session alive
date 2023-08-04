@@ -1,14 +1,24 @@
-#!/bin/bash
+Explain how Spark SQL works.
+What are Actions and Transformations in Spark? Can you give examples of each?
+What is the difference between persist() and cache() methods in Spark?
+Explain how Spark uses DAG (Directed Acyclic Graph).
+Can you explain what is a 'Partition' in Spark?
+What is a Spark DataFrame and how is it different from an RDD?
+How does the reduce operation work in Spark?
+Explain how the catalyst optimizer works in Spark SQL and how it improves the performance of SQL queries.
 
-# Define the function
-function check_zero {
-  if [ $1 -eq 0 ]; then
-    echo "The input is equal to zero."
-  else
-    echo "The input is not equal to zero."
-  fi
-}
 
-# Call the function with an argument
-check_zero 10
-check_zero 0
+SCENARIOS BASED
+If you are given a large dataset with billions of rows and hundreds of columns, how would you process it using Spark? What considerations would you take into account for optimizing your job?
+Suppose you are streaming a large amount of data into your Spark application. You need to ensure that if a failure occurs, no data is lost. How would you achieve this?
+Imagine you have been given a task to filter out certain rows based on multiple conditions in a Spark DataFrame. Can you explain a strategy to perform this efficiently?
+If a Spark application is running slower than expected, what steps would you take to troubleshoot and optimize it?
+Your Spark job runs well on your local machine but fails with an out-of-memory error in the cluster. How would you go about diagnosing and fixing this problem?
+You need to join two large datasets in Spark. However, you notice that the join operation is taking too much time. What could be the potential issues and how would you optimize it?
+You have a Spark job that reads data from a database. However, you notice that the job is slow because the database cannot handle many concurrent connections. How would you solve this?
+How would you handle skew in your Spark job when performing a join operation between two DataFrames?
+You need to aggregate a large DataFrame on multiple columns. However, you notice that the operation is taking too long. How would you optimize the aggregation operation in Spark?
+You have a Spark job where you create multiple intermediate DataFrames. However, you notice that Spark is recomputing the same DataFrame multiple times, making your job slow. How would you solve this?
+You have a Spark application where you need to process a large volume of data in real-time. However, you need to ensure that the processing time for each batch remains consistent. How would you balance the trade-off between throughput and latency?
+You have a long-running Spark application. However, over time, you notice that the performance of the application deteriorates. How would you diagnose and solve this problem?
+You are working with a large RDD that you are persisting across stages. However, you noticed that your Spark job is slow due to frequent garbage collection. How can you tune Spark's garbage collection to improve the performance?
