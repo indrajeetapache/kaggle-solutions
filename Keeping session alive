@@ -1,135 +1,23 @@
-Explain how Spark SQL works.
-What are Actions and Transformations in Spark? Can you give examples of each?
-  - count()
- - collect()
-- first()
-- take(n)
-- reduce(func)
-What is the difference between persist() and cache() methods in Spark?
-A-	cache(): The cache() method is a shorthand for using the default storage level, which is StorageLevel.MEMORY_ONLY (store deserialized objects in memory). It doesn't allow you to specify a storage level
-B-	persist(): The persist() method allows you to specify a storage level – MEMORY_ONLY, MEMORY_AND_DISK, MEMORY_ONLY_SER, MEMORY_AND_DISK_SER, DISK_ONLY, OFF_HEAP .
+import org.apache.spark.SparkContext
+import org.apache.hadoop.fs.{FileSystem, Path}
 
-Explain how Spark uses DAG (Directed Acyclic Graph).
-A-	Logical Execution Plan: DAG represents the sequence of transformations on data (which form a logical execution plan) and helps Spark understand the dependencies between different operations.
-B-	Fault Tolerance: With the help of DAG, Spark tracks data lineage information to rebuild lost data automatically.
-C-	Optimization: The DAG scheduler in Spark converts the user's transformations into stages of computation that can be performed on different nodes across the cluster. This grouping of transformations helps optimize the execution plan and minimizes data shuffling across the network.
-D-	Visualization: It's used to visualize the Spark job execution in the Spark UI, which helps in debugging the performance bottlenecks.
+object RenameHDFSFile {
 
-Can you explain what is a 'Partition' in Spark?
-A-	Partition' in Apache Spark is a logical division of a large distributed dataset. Spark automatically partitions RDDs and distributes the partitions across different nodes.
-What is a Spark DataFrame and how is it different from an RDD?
-A-	Structure: An RDD is merely a distributed collection of data, with no specific structure. A DataFrame, on the other hand, represents a structured, table-like view of data.
-B-	Schema: A DataFrame comes with schema information
-C-	Optimization: With DataFrames, you can take advantage of the Catalyst Optimizer for query optimization. The Catalyst Optimizer optimizes the execution plan of your queries by applying multiple transformations on the computation tree, leading to efficient execution.
-D-	Performance: Due to the Catalyst Optimizer and the Tungsten Project, which provides off-heap memory management, DataFrames can sometimes perform better than RDDs.
-E-	APIs: DataFrames offer high-level APIs for use in Java, Python, Scala, and R, and they support SQL.
-How does the reduce operation work in Spark?
-A-	The reduce() function takes a binary function (a function that takes two arguments and returns one).
-B-	The reduce() operation is parallelizable, meaning it can operate on partitions of the data in parallel.
-C-	The final output of the reduce() operation is sent to the driver program. It's important to note that reduce() should only be used when the output can fit in the memory of a single machine.
-Explain how the catalyst optimizer works in Spark SQL and how it improves the performance of SQL queries.
-A-	Catalyst is an extensible query optimization framework in Apache Spark and Spark SQL that improves the performance of SQL queries
-Logical Optimization: By applying rule-based optimizations to the logical.
-Physical Optimization: Using cost-based optimization techniques, it selects the most efficient physical plan for executing the query.
-Code Generation: Catalyst generates compact and efficient bytecode that can be directly run on the JVM, minimizing the overhead of interpretation
-Extensibility: Catalyst is designed to be easily extensible, allowing developers to add their optimization techniques, further improving query performance
+  def main(args: Array[String]): Unit = {
+    val sc = new SparkContext("local[*]", "Rename HDFS File")
 
-SCENARIOS BASED
-If you are given a large dataset with billions of rows and hundreds of columns, how would you process it using Spark? 
-Answer – Explain around
- Data Partitioning: Start by partitioning your data correctly or not .
-Choosing the Right Data Structure: Use DataFrame or Dataset APIs instead of RDDs whenever possible because they have optimizations (like Catalyst Optimizer and Tungsten Execution Engine) that can significantly improve performance
-Caching: If you're going to perform multiple operations on the same dataset, consider caching it
-Optimizing Transformations: Use transformations wisely, use filter as when as required .
-Leverage SQL: Use Spark SQL for performing operations. The Catalyst optimizer in Spark SQL optimizes the execution plan, resulting in faster execution.
-Memory Management – Explain about the memory manegemnt .
+    val hadoopConf = sc.hadoopConfiguration
+    val hdfs = FileSystem.get(hadoopConf)
 
-What considerations would you take into account for optimizing your job?
-Answer – 
- -Explain about Memory management 
-Serialization: Use efficient serialization methods. Spark's KryoSerializer is more efficient than Java's default serializer.
-Avoid Shuffling: Shuffling is expensive in terms of I/O and network communication
-Data Partitioning: Proper data partitioning can significantly reduce network traffic during shuffling and optimize data locality
-Use Broadcast Variables: as when required . Tune the spark configuration as when as required to improve the performance same can be achieved by modifying the spark-submit . Apply filter in data and  filter the data before processing .
-Use the right number of partitions .
+    val sourcePath = new Path("hdfs:///path/to/source/file")
+    val destPath = new Path("hdfs:///path/to/destination/file")
 
-Suppose you are streaming a large amount of data into your Spark application. You need to ensure that if a failure occurs, no data is lost. How would you achieve this?
-Answer - Transformation Lineage: Another mechanism that Spark uses for recovery is storing the lineage of transformations applied to an RDD. If a partition of an RDD is lost due to a failure, Spark can recompute that partition from the original data using the transformation lineage.
-Checkpoint in spark application .
+    if (hdfs.exists(sourcePath)) {
+      hdfs.rename(sourcePath, destPath)
+    } else {
+      println(s"Source file ${sourcePath.toString} does not exist!")
+    }
 
-
-Imagine you have been given a task to filter out certain rows based on multiple conditions in a Spark DataFrame. Can you explain a strategy to perform this efficiently?
-Use filter or where as when as required in Dataframe , Sample code .
-// Assuming we have a DataFrame `df` with columns "age", "income", and "city"
-
-// Use the `filter()` method
-val filteredDF = df.filter($"age" > 30 && $"income" > 50000 && $"city" === "New York")
-
-// Or you can use the `where()` method, which is just an alias for `filter()`
-val filteredDF2 = df.where($"age" > 30 && $"income" > 50000 && $"city" === "New York")
-
-If a Spark application is running slower than expected, what steps would you take to troubleshoot and optimize it?
-
-Answer – Check the Spark application web ui . And first observe at what stage the Application is taking time . 
-Look for Data Skew: Data skew can cause tasks to be unevenly distributed across the nodes, causing some tasks to take much longer than others.
-C heck for Excessive Shuffling: Operations like groupByKey and join can cause a lot of data to be shuffled across the network
-Memory and Disk Usage: Monitor your Spark application's memory and disk usage. An application might run slower if it's running out of memory and has to write to disk
-Check Number of Partitions: Having too few partitions can lead to insufficient parallelism and having more can lead to smaller number of files.We have to find a balance .
-Caching Intermediate Results: If you're performing multiple operations on the same dataset, Use BroadCast Variables: If a large read-only lookup table is used in transformations, consider using broadcast variables Tuning Spark Configuration:
-
-Your Spark job runs well on your local machine but fails with an out-of-memory error in the cluster. How would you go about diagnosing and fixing this problem?
-Answer – Look for the spark configuration and Data you are handling . Look for these spark configuration spark.executor.memory, spark.driver.memory, spark.executor.cores, spark.executor.memoryOverhead, spark.driver.memoryOverhead.
-Avoid large data skewness and Avoid collecting large amount of data .Optmize the code by looking out at what stage exactly the code is actually taking the time .
-
-You need to join two large datasets in Spark. However, you notice that the join operation is taking too much time. What could be the potential issues and how would you optimize it?
-
-Check whether is actually Data skewness is happening or not .If the you are joining with small data frame then check if you can broadcast join . val result = df1.join(broadcast(df2), "join_column")
-Filtering Before Joining: Applying any filters before joining can reduce the amount of data that needs to be processed, And UDF for tracnformations .
-
-
-You have a Spark job that reads data from a database. However, you notice that the job is slow because the database cannot handle many concurrent connections. How would you solve this? 
-
-When we access the data using JDBC then we have to modify the approach and they way we access the data . Example we are trying to read the data from my sql 
-val jdbcDF: DataFrame = spark.read
-  .format("jdbc")
-  .option("url", "jdbc:mysql://db.example.com:3306/mydb")
-  .option("dbtable", "myTable")
-  .option("user", "username")
-  .option("password", "password")
-  .option("partitionColumn", "id") // Column used for partitioning
-  .option("lowerBound", "1") // Lower bound of the first partition
-  .option("upperBound", "1000000") // Upper bound of the last partition
-  .option("numPartitions", "10") // Number of partitions
-  .load()
--	If required perform the repartition on JdbcDF to increase the parallelism . But remember selecting static number partition is bad practis e.
-
-How would you handle skew in your Spark job when performing a join operation between two DataFrames?
-Ans – Use salting techniques . Split and Union: If we know which key(s) are skewed, we can perform the join operation separately for the skewed keys and the non-skewed keys and then union the results , And use broadcasting technique .
-
-
-You need to aggregate a large DataFrame on multiple columns. However, you notice that the operation is taking too long. How would you optimize the aggregation operation in Spark?
-Answer – 
-1-	Reduce Shuffling
-2-	Adjusting Parallelism
-3-	Use reduceByKey or aggregateByKey instead of groupByKey
-4-	Handling Data Skew:
-
-You have a Spark job where you create multiple intermediate DataFrames. However, you notice that Spark is recomputing the same DataFrame multiple times, making your job slow. How would you solve this?
-
-Answer – In such scenario first identify the line where it happening . There might be scenario where user is performing actions multiple time . In such cases its better to cache() data frame so that re computation will not happen .
-
-You have a Spark application where you need to process a large volume of data in real-time. However, you need to ensure that the processing time for each batch remains consistent. How would you balance the trade-off between throughput and latency?
-
-Answer – Manage the parallelism by doing re -partition. Check for the data skewness and use reduce by in your code rather than group by .
-
-You have a long-running Spark application. However, over time, you notice that the performance of the application deteriorates. How would you diagnose and solve this problem?
-Anser – Check for the memory leakage , Garbage collection .Data skewness .Look for the transformations you have applied might be those transformations are not upto the mark.
-
-
-You are working with a large RDD that you are persisting across stages. However, you noticed that your Spark job is slow due to frequent garbage collection. How can you tune Spark's garbage collection to improve the performance?
-
-Answer – 
-1.	Increase the executor memory .
-2.	Tune the fraction of executor memory dedicated to the JVM heap
-3.	Tune GC setting 
-
+    sc.stop()
+  }
+}
