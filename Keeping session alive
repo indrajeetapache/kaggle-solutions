@@ -60,3 +60,19 @@ Sure, let's design an architecture to automate the process of generating Minutes
 - **Scalability**: If dealing with numerous meetings and MOMs, ensure that the infrastructure can handle the load and process data efficiently.
 
 By combining NLP tools (like spaCy or NLTK) with deep learning frameworks (like PyTorch), you can build a robust system for automating the creation and distribution of MOMs from Zoom calls.
+
+
+====
+Pipe (|): This is a common separator in some contexts but might be rare in others.
+Tilde (~)
+Caret (^)
+Backtick (`)
+Section Sign (§)
+Pilcrow Sign (¶)
+Dagger (†) and Double Dagger (‡)
+Broken Bar (¦)
+Degree (°)
+Inverted Exclamation (¡)
+Inverted Question Mark (¿)
+Currency symbols not commonly used in your dataset's context, such as: ¥, £, €, ₩, ฿
+Math symbols: ±, ∞, ≈, ≠
