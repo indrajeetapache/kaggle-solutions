@@ -1,4 +1,1 @@
-val hashedDF = df.withColumn("row_hash", sha2(col("name").cast("string"), 256))
-val combinedHashString = hashedDF.select("row_hash").rdd.map(r => r(0).toString).collect().sorted.mkString
-val finalHashValue = sha2(concat_ws("", lit(combinedHashString)), 256)
-
+r
