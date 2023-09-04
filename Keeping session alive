@@ -1,27 +1,4 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.types import *
-
-spark = SparkSession.builder.enableHiveSupport().getOrCreate()
-
-# 1. Get the Hive table schema
-hive_table_schema = spark.sql("DESCRIBE your_hive_table_name").collect()
-hive_column_types = {row.col_name: row.data_type for row in hive_table_schema}
-
-# 2. & 3. Compare and perform necessary type conversions
-for column in df.columns:
-    df_col_type = df.schema[column].dataType
-    hive_col_type = hive_column_types.get(column, None)
-    
-    if hive_col_type and (str(df_col_type) != hive_col_type):
-        if isinstance(df_col_type, StringType):
-            if hive_col_type == "int":
-                df = df.withColumn(column, col(column).cast(IntegerType()))
-            # Add other type conversions as needed here
-        # Add logic for other source column types if needed
-
-# 4. Handle special cases, like non-numeric strings if needed
-# This can be done with specific logic or UDFs depending on the nature of the data
-
-# 5. Write to Hive
-df.write.mode("overwrite").saveAsTable("your_hive_table_name")
+val hashedDF = df.withColumn("row_hash", sha2(col("name").cast("string"), 256))
+val combinedHashString = hashedDF.select("row_hash").rdd.map(r => r(0).toString).collect().sorted.mkString
+val finalHashValue = sha2(concat_ws("", lit(combinedHashString)), 256)
 
