@@ -1,21 +1,48 @@
 import os
 import boto3
+import pytest
+from your_script_name import upload_to_s3, download_from_s3  # Replace 'your_script_name' with the name of the above script.
 
-# Set AWS credentials as environment variables
-os.environ['AWS_ACCESS_KEY_ID'] = 'YOUR_ACCESS_KEY'
-os.environ['AWS_SECRET_ACCESS_KEY'] = 'YOUR_SECRET_KEY'
-os.environ['AWS_SESSION_TOKEN'] = 'YOUR_SESSION_TOKEN'  # If using temporary credentials
+# Mock bucket name and file paths for testing
+BUCKET_NAME = 'test-bucket'
+UPLOAD_PATH = 'local/path/to/IS44065_sample'
+S3_PATH = 'path/in/s3/IS44065_sample'
+DOWNLOAD_PATH = 'local/download/path/IS44065_sample'
 
-def upload_to_s3(bucket_name, file_path, object_name):
-    s3_client = boto3.client('s3')
-    s3_client.upload_file(file_path, bucket_name, object_name)
+@pytest.fixture(scope='module')
+def setup_s3():
+    """
+    Setup for S3. Create a bucket and configure boto3 for testing.
+    """
+    # Setup AWS mock credentials (for the sake of testing, this won't work with real AWS without real credentials)
+    os.environ['AWS_ACCESS_KEY_ID'] = 'mock_access_key'
+    os.environ['AWS_SECRET_ACCESS_KEY'] = 'mock_secret_key'
+    os.environ['AWS_SESSION_TOKEN'] = 'mock_session_token'
+    
+    s3 = boto3.resource('s3')
+    s3.create_bucket(Bucket=BUCKET_NAME)
 
+    yield  # This will return control, execute the test case and come back for cleanup
 
-def download_from_s3(bucket_name, object_name, download_path):
-    s3_client = boto3.client('s3')
-    s3_client.download_file(bucket_name, object_name, download_path)
+    # Cleanup: Delete the created bucket after tests (note: this does not handle deletion of non-empty buckets)
+    s3.Bucket(BUCKET_NAME).delete()
 
-# Usage:
-BUCKET_NAME = 'your-bucket-name'
-upload_to_s3(BUCKET_NAME, 'local/path/to/IS44065_sample', 'path/in/s3/IS44065_sample')
-download_from_s3(BUCKET_NAME, 'path/in/s3/IS44065_sample', 'local/download/path/IS44065_sample')
+def test_upload_to_s3(setup_s3):
+    upload_to_s3(BUCKET_NAME, UPLOAD_PATH, S3_PATH)
+    
+    # Check if file exists in S3
+    s3 = boto3.resource('s3')
+    bucket = s3.Bucket(BUCKET_NAME)
+    objs = list(bucket.objects.filter(Prefix=S3_PATH))
+    assert len(objs) > 0 and objs[0].key == S3_PATH
+
+def test_download_from_s3(setup_s3):
+    # First, upload a sample file for downloading
+    upload_to_s3(BUCKET_NAME, UPLOAD_PATH, S3_PATH)
+
+    # Now, test the download
+    download_from_s3(BUCKET_NAME, S3_PATH, DOWNLOAD_PATH)
+    assert os.path.exists(DOWNLOAD_PATH)  # Check if file exists at the expected download path
+
+    # Cleanup: remove the downloaded file after test
+    os.remove(DOWNLOAD_PATH)
