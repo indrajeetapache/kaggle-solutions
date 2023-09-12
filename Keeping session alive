@@ -1,49 +1,47 @@
-import pandas as pd
+import json
 
-class DataFrameManager:
-    def __init__(self, df):
-        self.df = df
+def read_json_file(filename):
+    with open(filename, 'r') as file:
+        return json.load(file)
 
-    # Read: Return the DataFrame or a slice of it
-    def read(self, row_idx=None, col_idx=None):
-        if row_idx is not None and col_idx is not None:
-            return self.df.iloc[row_idx, col_idx]
-        elif row_idx is not None:
-            return self.df.iloc[row_idx]
+def write_json_file(filename, data):
+    with open(filename, 'w') as file:
+        json.dump(data, file, indent=4)
+
+def display_nested_data(data, prefix=""):
+    for key, value in data.items():
+        current_key_path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            display_nested_data(value, current_key_path)
         else:
-            return self.df
+            print(f"{current_key_path}: {value}")
 
-    # Update: Update a specific value in the DataFrame
-    def update(self, row_idx, col_idx, value):
-        self.df.iloc[row_idx, col_idx] = value
+def modify_nested_attribute(data, key_path, new_value):
+    keys = key_path.split(".")
+    item = data
+    for key in keys[:-1]:
+        item = item[key]
+    old_value = item[keys[-1]]
 
-    # Delete: Delete rows based on row index or column based on column name
-    def delete(self, row_idx=None, col_name=None):
-        if row_idx is not None:
-            self.df.drop(index=row_idx, inplace=True)
-        if col_name is not None:
-            self.df.drop(columns=col_name, inplace=True)
+    # Convert user input if necessary
+    if isinstance(old_value, list):
+        new_value = new_value.split(",")  
+    elif isinstance(old_value, (int, float)):
+        new_value = type(old_value)(new_value)
 
-# Sample data
-data = [
-    {'Name': 'John', 'Age': 28, 'City': 'New York'},
-    {'Name': 'Anna', 'Age': 22, 'City': 'London'},
-    {'Name': 'Mike', 'Age': 32, 'City': 'San Francisco'}
-]
-df = pd.DataFrame(data)
+    item[keys[-1]] = new_value
 
-# Sort the DataFrame
-sorted_df = df.sort_values(by=['Name', 'Age'])
-manager = DataFrameManager(sorted_df)
+data = read_json_file('data.json')
 
-# Read operations
-print(manager.read())  # Read the entire DataFrame
-print(manager.read(row_idx=1))  # Read the second row
+print("Current data in JSON:")
+display_nested_data(data)
 
-# Update operation
-manager.update(1, 1, 25)  # Update the age of the person in the second row
-print(manager.read())
+key_to_modify = input("\nWhich attribute would you like to modify? Use dot notation for nested attributes (e.g., 'person.name'): ")
 
-# Delete operation
-manager.delete(row_idx=0)  # Delete the first row
-print(manager.read())
+try:
+    new_value = input(f"Enter the new value for {key_to_modify}: ")
+    modify_nested_attribute(data, key_to_modify, new_value)
+    write_json_file('data.json', data)
+    print(f"{key_to_modify} has been updated to {new_value} in data.json!")
+except KeyError:
+    print("Attribute not found!")
