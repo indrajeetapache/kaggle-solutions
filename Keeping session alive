@@ -1,48 +1,49 @@
-import os
-import boto3
-import pytest
-from your_script_name import upload_to_s3, download_from_s3  # Replace 'your_script_name' with the name of the above script.
+import pandas as pd
 
-# Mock bucket name and file paths for testing
-BUCKET_NAME = 'test-bucket'
-UPLOAD_PATH = 'local/path/to/IS44065_sample'
-S3_PATH = 'path/in/s3/IS44065_sample'
-DOWNLOAD_PATH = 'local/download/path/IS44065_sample'
+class DataFrameManager:
+    def __init__(self, df):
+        self.df = df
 
-@pytest.fixture(scope='module')
-def setup_s3():
-    """
-    Setup for S3. Create a bucket and configure boto3 for testing.
-    """
-    # Setup AWS mock credentials (for the sake of testing, this won't work with real AWS without real credentials)
-    os.environ['AWS_ACCESS_KEY_ID'] = 'mock_access_key'
-    os.environ['AWS_SECRET_ACCESS_KEY'] = 'mock_secret_key'
-    os.environ['AWS_SESSION_TOKEN'] = 'mock_session_token'
-    
-    s3 = boto3.resource('s3')
-    s3.create_bucket(Bucket=BUCKET_NAME)
+    # Read: Return the DataFrame or a slice of it
+    def read(self, row_idx=None, col_idx=None):
+        if row_idx is not None and col_idx is not None:
+            return self.df.iloc[row_idx, col_idx]
+        elif row_idx is not None:
+            return self.df.iloc[row_idx]
+        else:
+            return self.df
 
-    yield  # This will return control, execute the test case and come back for cleanup
+    # Update: Update a specific value in the DataFrame
+    def update(self, row_idx, col_idx, value):
+        self.df.iloc[row_idx, col_idx] = value
 
-    # Cleanup: Delete the created bucket after tests (note: this does not handle deletion of non-empty buckets)
-    s3.Bucket(BUCKET_NAME).delete()
+    # Delete: Delete rows based on row index or column based on column name
+    def delete(self, row_idx=None, col_name=None):
+        if row_idx is not None:
+            self.df.drop(index=row_idx, inplace=True)
+        if col_name is not None:
+            self.df.drop(columns=col_name, inplace=True)
 
-def test_upload_to_s3(setup_s3):
-    upload_to_s3(BUCKET_NAME, UPLOAD_PATH, S3_PATH)
-    
-    # Check if file exists in S3
-    s3 = boto3.resource('s3')
-    bucket = s3.Bucket(BUCKET_NAME)
-    objs = list(bucket.objects.filter(Prefix=S3_PATH))
-    assert len(objs) > 0 and objs[0].key == S3_PATH
+# Sample data
+data = [
+    {'Name': 'John', 'Age': 28, 'City': 'New York'},
+    {'Name': 'Anna', 'Age': 22, 'City': 'London'},
+    {'Name': 'Mike', 'Age': 32, 'City': 'San Francisco'}
+]
+df = pd.DataFrame(data)
 
-def test_download_from_s3(setup_s3):
-    # First, upload a sample file for downloading
-    upload_to_s3(BUCKET_NAME, UPLOAD_PATH, S3_PATH)
+# Sort the DataFrame
+sorted_df = df.sort_values(by=['Name', 'Age'])
+manager = DataFrameManager(sorted_df)
 
-    # Now, test the download
-    download_from_s3(BUCKET_NAME, S3_PATH, DOWNLOAD_PATH)
-    assert os.path.exists(DOWNLOAD_PATH)  # Check if file exists at the expected download path
+# Read operations
+print(manager.read())  # Read the entire DataFrame
+print(manager.read(row_idx=1))  # Read the second row
 
-    # Cleanup: remove the downloaded file after test
-    os.remove(DOWNLOAD_PATH)
+# Update operation
+manager.update(1, 1, 25)  # Update the age of the person in the second row
+print(manager.read())
+
+# Delete operation
+manager.delete(row_idx=0)  # Delete the first row
+print(manager.read())
