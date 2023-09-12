@@ -1,17 +1,21 @@
-Subject: Changes to Audit Framework Integration with GRMAs Project
+import os
+import boto3
 
-Dear [Recipient/Team Name],
+# Set AWS credentials as environment variables
+os.environ['AWS_ACCESS_KEY_ID'] = 'YOUR_ACCESS_KEY'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'YOUR_SECRET_KEY'
+os.environ['AWS_SESSION_TOKEN'] = 'YOUR_SESSION_TOKEN'  # If using temporary credentials
 
-I hope this email finds you well. We've received a directive from the higher management that we need to communicate and ensure is followed diligently.
+def upload_to_s3(bucket_name, file_path, object_name):
+    s3_client = boto3.client('s3')
+    s3_client.upload_file(file_path, bucket_name, object_name)
 
-Effective immediately, the integration of the Audit Framework with the GRMAs project will be the responsibility of each individual scrum team. It's important to note that there will be no allocation of additional resources specifically for this integration. Each team will need to plan and manage this integration within its existing resources and bandwidth.
 
-Additionally, I'd like to inform everyone that due to our (Akshara's and my) new roles and increased responsibilities, we won't have the bandwidth to assist or spend time on the Audit Framework integration going forward. We trust in the capability and adaptability of each scrum team to take on this challenge and continue to deliver the exceptional work you always have.
+def download_from_s3(bucket_name, object_name, download_path):
+    s3_client = boto3.client('s3')
+    s3_client.download_file(bucket_name, object_name, download_path)
 
-We understand that this is a significant change and we recommend that team leads and members discuss the best way to approach this integration in your respective scrum meetings. Your adaptability and resilience in the face of these new directives are much appreciated. 
-
-Thank you for your understanding and cooperation. Should there be any concerns or clarifications needed, please feel free to reach out.
-
-Best Regards,
-
-[Your Name]
+# Usage:
+BUCKET_NAME = 'your-bucket-name'
+upload_to_s3(BUCKET_NAME, 'local/path/to/IS44065_sample', 'path/in/s3/IS44065_sample')
+download_from_s3(BUCKET_NAME, 'path/in/s3/IS44065_sample', 'local/download/path/IS44065_sample')
