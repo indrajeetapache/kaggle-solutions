@@ -1,47 +1,25 @@
-import json
+def bubble_sort(arr):
+    """
+    Sorts the input list using the bubble sort algorithm.
+    
+    :param arr: List of elements to be sorted
+    :type arr: list
+    """
+    n = len(arr)
+    for i in range(n):
+        swapped = False
+        for j in range(0, n-i-1):
+            if arr[j] > arr[j+1]:
+                swapped = True
+                arr[j], arr[j+1] = arr[j+1], arr[j]
 
-def read_json_file(filename):
-    with open(filename, 'r') as file:
-        return json.load(file)
+        # If no swaps happened, the list is already sorted.
+        if not swapped:
+            break
 
-def write_json_file(filename, data):
-    with open(filename, 'w') as file:
-        json.dump(data, file, indent=4)
+    return arr  # Optional, as the input list is modified in place
 
-def display_nested_data(data, prefix=""):
-    for key, value in data.items():
-        current_key_path = f"{prefix}.{key}" if prefix else key
-        if isinstance(value, dict):
-            display_nested_data(value, current_key_path)
-        else:
-            print(f"{current_key_path}: {value}")
-
-def modify_nested_attribute(data, key_path, new_value):
-    keys = key_path.split(".")
-    item = data
-    for key in keys[:-1]:
-        item = item[key]
-    old_value = item[keys[-1]]
-
-    # Convert user input if necessary
-    if isinstance(old_value, list):
-        new_value = new_value.split(",")  
-    elif isinstance(old_value, (int, float)):
-        new_value = type(old_value)(new_value)
-
-    item[keys[-1]] = new_value
-
-data = read_json_file('data.json')
-
-print("Current data in JSON:")
-display_nested_data(data)
-
-key_to_modify = input("\nWhich attribute would you like to modify? Use dot notation for nested attributes (e.g., 'person.name'): ")
-
-try:
-    new_value = input(f"Enter the new value for {key_to_modify}: ")
-    modify_nested_attribute(data, key_to_modify, new_value)
-    write_json_file('data.json', data)
-    print(f"{key_to_modify} has been updated to {new_value} in data.json!")
-except KeyError:
-    print("Attribute not found!")
+if __name__ == '__main__':
+    arr = [64, 34, 25, 12, 22, 11, 90]
+    sorted_arr = bubble_sort(arr)
+    print("Sorted array is:", ' '.join(map(str, sorted_arr)))
