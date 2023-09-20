@@ -1,25 +1,34 @@
-def bubble_sort(arr):
-    """
-    Sorts the input list using the bubble sort algorithm.
-    
-    :param arr: List of elements to be sorted
-    :type arr: list
-    """
-    n = len(arr)
-    for i in range(n):
-        swapped = False
-        for j in range(0, n-i-1):
-            if arr[j] > arr[j+1]:
-                swapped = True
-                arr[j], arr[j+1] = arr[j+1], arr[j]
+import org.apache.spark.sql.SparkSession
+import com.mongodb.spark.MongoSpark
+import org.bson.Document
+import java.time.LocalDate
 
-        # If no swaps happened, the list is already sorted.
-        if not swapped:
-            break
+object MongoDateFilterExample {
+  def main(args: Array[String]): Unit = {
+    val spark = SparkSession.builder()
+      .appName("MongoDB Date Filter")
+      .master("local[*]") // Adjust this as per your environment
+      .config("spark.mongodb.input.uri", "mongodb://127.0.0.1/test.myCollection") // Replace with your MongoDB URI
+      .getOrCreate()
 
-    return arr  # Optional, as the input list is modified in place
+    val currentDate = LocalDate.now().toString
 
-if __name__ == '__main__':
-    arr = [64, 34, 25, 12, 22, 11, 90]
-    sorted_arr = bubble_sort(arr)
-    print("Sorted array is:", ' '.join(map(str, sorted_arr)))
+    val pipeline = Seq(
+      Document.parse(
+        s"""
+        {
+          $match: {
+            dateField: { $eq: ISODate("$currentDate") }
+          }
+        }
+        """
+      )
+    )
+
+    val df = MongoSpark.load(spark, pipeline)
+
+    df.show()
+
+    spark.stop()
+  }
+}
