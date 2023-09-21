@@ -1,1 +1,4 @@
 TO_TIMESTAMP(TO_CHAR(date_column, 'YYYY-MM-DD HH24:MI:SS')) AS timestamp_column 
+SELECT TO_TIMESTAMP('21-10-2023 03.10.00.125 PM', 'DD-MM-YYYY HH.MI.SS.FF3 PM') AS standard_timestamp
+FROM dual;
+
