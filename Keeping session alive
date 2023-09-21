@@ -1,7 +1,1 @@
-TO_TIMESTAMP(TO_CHAR(date_column, 'YYYY-MM-DD HH24:MI:SS')) AS timestamp_column 
-SELECT TO_TIMESTAMP('21-10-2023 03.10.00.125 PM', 'DD-MM-YYYY HH.MI.SS.FF3 PM') AS standard_timestamp
-FROM dual;
-val lastMaxTimestamp: String = "2022-01-01 00:00:00"  // Replace with your actual last max timestamp
-val query = s"(SELECT * FROM your_table WHERE your_timestamp_column > TO_TIMESTAMP('$lastMaxTimestamp', 'YYYY-MM-DD HH24:MI:SS')) subquery"
-val incrementalDF: DataFrame = spark.read.jdbc(jdbcUrl, query, properties)
 
