@@ -1,37 +1,19 @@
-import org.apache.spark.sql.{SparkSession, DataFrame}
+import org.apache.spark.sql.SparkSession
 
 object MySparkApp {
   def main(args: Array[String]): Unit = {
-    val spark = SparkSession.builder
-      .appName("My Spark Application")
-      .getOrCreate()
+    val spark = SparkSession.builder.appName("My Spark App").getOrCreate()
 
-    try {
-      // Creating a sample DataFrame
-      val df: DataFrame = spark.createDataFrame(Seq(
-        ("Alice", 29),
-        ("Bob", 34)
-      )).toDF("name", "age")
+    val condition = true // Replace with actual condition
 
-      // Your Spark job logic here
-      // ...
-
-      // Condition1: Check if DataFrame is empty
-      val condition1 = df.isEmpty
-
-      if (condition1) {
-        println("DataFrame is empty. Exiting with code 1.")
-        System.exit(1)
-      } else {
-        println("DataFrame is not empty. Exiting with code 0 (success).")
-        System.exit(0)
-      }
-
-    } catch {
-      case e: Exception =>
-        println(s"An error occurred: ${e.getMessage}")
-        // If an exception occurs, exit with a custom error code, e.g., 99
-        System.exit(99)
+    if (condition) {
+      println("Condition met, stopping the application.")
+      spark.stop()
+      return // Exits the current method, skipping all code below
     }
+
+    println("This line will not be executed if the condition is true.")
+
+    // Rest of your Spark job logic here
   }
 }
