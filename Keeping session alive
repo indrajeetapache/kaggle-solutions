@@ -1,3 +1,20 @@
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.{split, size, element_at}
+
+val spark = SparkSession.builder.appName("example").getOrCreate()
+
+// Example DataFrame
+val df = spark.createDataFrame(Seq(
+  ("abc@def", "ghi#jkl"),
+  ("mno@pqr", "stu#vwx")
+)).toDF("col1", "col2")
+
+val separators = Array("@", "#")
+
+// Using foldLeft to apply the custom substring_index-like operation to each column
 val updatedDF = df.columns.foldLeft(df) { (tempDF, columnName) =>
-  tempDF.withColumn(columnName, expr(s"substring_index($columnName, '$separator', 1)"))
+  val separator = separators(1)  // Replace with the logic to select appropriate separator
+  tempDF.withColumn(columnName, element_at(split(col(columnName), separator), 1))
 }
+
+updatedDF.show()
