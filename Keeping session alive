@@ -1,20 +1,30 @@
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{split, size, element_at}
 
-val spark = SparkSession.builder.appName("example").getOrCreate()
+val spark = SparkSession.builder.appName("example").master("local[1]").getOrCreate()
 
-// Example DataFrame
-val df = spark.createDataFrame(Seq(
-  ("abc@def", "ghi#jkl"),
-  ("mno@pqr", "stu#vwx")
-)).toDF("col1", "col2")
+val data = Seq(
+  (1, "foo", 3.0),
+  (2, "bar", 4.0),
+  (3, "baz", 5.0)
+)
 
-val separators = Array("@", "#")
+val df = spark.createDataFrame(data).toDF("col1", "col2", "col3")
 
-// Using foldLeft to apply the custom substring_index-like operation to each column
-val updatedDF = df.columns.foldLeft(df) { (tempDF, columnName) =>
-  val separator = separators(1)  // Replace with the logic to select appropriate separator
-  tempDF.withColumn(columnName, element_at(split(col(columnName), separator), 1))
-}
+// Convert all columns to string and concatenate them
+val concatDF = df.withColumn(
+  "concatenated",
+  concat(df.columns.map(col): _*)
+)
 
-updatedDF.show()
+// Collect all concatenated strings and make them into one big string
+val allValuesConcatenated = concatDF.select("concatenated")
+  .rdd.map(r => r(0).toString)
+  .reduce(_ + _)
+
+// Hash the big string
+import java.security.MessageDigest
+val md = MessageDigest.getInstance("MD5")
+val hash = md.digest(allValuesConcatenated.getBytes).map("%02x".format(_)).mkString
+
+println(s"MD5 hash of the entire DataFrame: $hash")
