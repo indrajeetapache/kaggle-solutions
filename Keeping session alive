@@ -27,8 +27,8 @@ def recursiveAggregation(df: DataFrame, callCount: Int = 1): DataFrame = {
   // Log the call count
   println(s"Recursive call count: $callCount")
 
-  // Define a window specification with an orderBy clause
-  val windowSpec = Window.orderBy(lit(1))  // Here, lit(1) is a dummy value to order by
+  // Define a window specification with an orderBy clause on the key column
+  val windowSpec = Window.orderBy("key")
 
   // Generate a row number for each row
   val dfWithId = df.withColumn("value", row_number().over(windowSpec))
@@ -47,8 +47,12 @@ def recursiveAggregation(df: DataFrame, callCount: Int = 1): DataFrame = {
     case count => (count / 10).toInt
   }
 
-  // Add a partition ID to each row based on the calculated range
-  val dfWithPartitionId = dfWithId.withColumn("partition_id", floor(col("value") / range))
+  // Assign a constant partition_id if maxId is less than 50, otherwise calculate partition_id based on the range
+  val dfWithPartitionId = if (maxId < 50) {
+    dfWithId.withColumn("partition_id", lit(0))
+  } else {
+    dfWithId.withColumn("partition_id", floor(col("value") / range))
+  }
 
   // Group by the partition ID and key, then aggregate
   val aggregatedDF = dfWithPartitionId.groupBy("partition_id", "key")
