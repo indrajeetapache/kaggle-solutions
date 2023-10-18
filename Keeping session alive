@@ -1,14 +1,14 @@
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.SparkSession
 
 val spark = SparkSession.builder()
   .appName("example")
-  .master("local[*]")  // Adjust this based on your setup
+  .master("local[*]")  // Adjust based on your setup
   .getOrCreate()
 
 import spark.implicits._
 
-// Assuming your original DataFrame doesn't have a value column
+// Sample DataFrame
 val df = Seq(
   ("A"),
   ("A"),
@@ -21,26 +21,39 @@ val df = Seq(
   ("D")
 ).toDF("key")
 
-// Generating a unique identifier using monotonically_increasing_id()
-val dfWithId = df.withColumn("value", monotonically_increasing_id())
+// Function to perform recursive aggregation
+def recursiveAggregation(df: DataFrame, callCount: Int = 1): DataFrame = {
+  // Log the call count
+  println(s"Recursive call count: $callCount")
 
-// Optionally, cache the DataFrame if it's going to be reused
-dfWithId.cache()
+  // Generate a unique identifier for each row
+  val dfWithId = df.withColumn("value", monotonically_increasing_id())
 
-// Calculate the total count
-val totalCount = dfWithId.count()
+  // Get the maximum value in the value column, which indicates the total count minus one
+  val maxId = dfWithId.agg(max("value")).head.getLong(0)
 
-// Calculate the range dynamically
-val range = totalCount match {
-  case count if count < 50 => 2
-  case count => (count / 10).toInt
+  // If maxId is 0, it means there's only one row, so return the DataFrame
+  if (maxId == 0) {
+    return dfWithId
+  }
+
+  // Calculate the range dynamically
+  val range = (maxId + 1) match {
+    case count if count < 50 => 2
+    case count => (count / 10).toInt
+  }
+
+  // Add a partition ID to each row based on the calculated range
+  val dfWithPartitionId = dfWithId.withColumn("partition_id", floor(col("value") / range))
+
+  // Group by the partition ID and key, then aggregate
+  val aggregatedDF = dfWithPartitionId.groupBy("partition_id", "key")
+    .agg(md5(concat_ws("", collect_list(dfWithPartitionId("value").cast("string")))).alias("hash"))
+
+  // Call the function recursively with the new DataFrame, incrementing the call count
+  recursiveAggregation(aggregatedDF.drop("partition_id", "value"), callCount + 1)
 }
 
-// Add a partition ID to each row based on the calculated range
-val dfWithPartitionId = dfWithId.withColumn("partition_id", floor(col("value") / range))
-
-// Group by the partition ID and key, then aggregate
-val aggregatedDF = dfWithPartitionId.groupBy("partition_id", "key")
-  .agg(collect_list("value").alias("values"))
-
-aggregatedDF.show()
+// Call the recursive aggregation function
+val resultDF = recursiveAggregation(df)
+resultDF.show()
