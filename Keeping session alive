@@ -1,30 +1,46 @@
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.SparkSession
 
-val spark = SparkSession.builder.appName("example").master("local[1]").getOrCreate()
+val spark = SparkSession.builder()
+  .appName("example")
+  .master("local[*]")  // Adjust this based on your setup
+  .getOrCreate()
 
-val data = Seq(
-  (1, "foo", 3.0),
-  (2, "bar", 4.0),
-  (3, "baz", 5.0)
-)
+import spark.implicits._
 
-val df = spark.createDataFrame(data).toDF("col1", "col2", "col3")
+// Assuming your original DataFrame doesn't have a value column
+val df = Seq(
+  ("A"),
+  ("A"),
+  ("B"),
+  ("B"),
+  ("B"),
+  ("C"),
+  ("C"),
+  ("D"),
+  ("D")
+).toDF("key")
 
-// Convert all columns to string and concatenate them
-val concatDF = df.withColumn(
-  "concatenated",
-  concat(df.columns.map(col): _*)
-)
+// Generating a unique identifier using monotonically_increasing_id()
+val dfWithId = df.withColumn("value", monotonically_increasing_id())
 
-// Collect all concatenated strings and make them into one big string
-val allValuesConcatenated = concatDF.select("concatenated")
-  .rdd.map(r => r(0).toString)
-  .reduce(_ + _)
+// Optionally, cache the DataFrame if it's going to be reused
+dfWithId.cache()
 
-// Hash the big string
-import java.security.MessageDigest
-val md = MessageDigest.getInstance("MD5")
-val hash = md.digest(allValuesConcatenated.getBytes).map("%02x".format(_)).mkString
+// Calculate the total count
+val totalCount = dfWithId.count()
 
-println(s"MD5 hash of the entire DataFrame: $hash")
+// Calculate the range dynamically
+val range = totalCount match {
+  case count if count < 50 => 2
+  case count => (count / 10).toInt
+}
+
+// Add a partition ID to each row based on the calculated range
+val dfWithPartitionId = dfWithId.withColumn("partition_id", floor(col("value") / range))
+
+// Group by the partition ID and key, then aggregate
+val aggregatedDF = dfWithPartitionId.groupBy("partition_id", "key")
+  .agg(collect_list("value").alias("values"))
+
+aggregatedDF.show()
