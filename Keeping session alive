@@ -67,3 +67,6 @@ def recursiveAggregation(df: DataFrame, callCount: Int = 1): DataFrame = {
 // Call the recursive aggregation function
 val resultDF = recursiveAggregation(df)
 resultDF.show()
+
+
+val resultDF = df.withColumn("substring", substring(col("yourColumn"), 1, 5))
