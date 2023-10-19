@@ -52,6 +52,8 @@ def recursiveAggregation(df: DataFrame, callCount: Int = 1): DataFrame = {
     dfWithId.withColumn("partition_id", lit(0))
   } else {
     dfWithId.withColumn("partition_id", floor(col("value") / range))
+// val randomExpression = expr(s"floor($n + (rand() * (${range} - $n)))")  // generates a random number between n and range
+  dfWithId.withColumn("partition_id", randomExpression)
   }
 
   // Group by the partition ID and key, then aggregate
