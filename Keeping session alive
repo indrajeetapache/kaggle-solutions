@@ -89,3 +89,12 @@ val resultDf = rowCount match {
         // Optionally handle other cases
         df
     }
+
+=============
+
+Dear Team,
+
+I wanted to clarify that the below-mentioned issue is not a framework issue, but rather an enhancement opportunity:
+
+Currently, if the specified file is unavailable, the file ingestion wrapper does not initiate the Spark submit process, and exits with a status of 0.
+Going forward, please share all enhancement details regarding this behavior to our framework Distribution List (DL) for further discussion and action.
