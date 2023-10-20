@@ -98,3 +98,21 @@ Currently, if the specified file is unavailable, the file ingestion wrapper does
 Going forward, please share all enhancement details regarding this behavior to our framework Distribution List (DL) for further discussion and action.
 
 Additionally, as per our discussion, we are proceeding with this enhancement. However, we will need your support to test this capability to ensure smooth integration and functionality.
+=====================
+
+
+Subject: Update on Hash Key Grouping Functionality Implementation
+
+Dear Team,
+
+I would like to share updates on the function created for dynamic grouping based on hash key values. Following suggestions, the function was designed to dynamically take the first 5 characters from the hash column, executing recursively until a single hash value is obtained. Initially, the function performed as expected, generating the correct group_id and categorizing hash keys accurately. However, during recursive calls, the function didn't work as intended, leading to continuous job runs.
+
+I then pursued an alternative approach, generating a row number on the hash key and calling the function recursively until a single value is achieved. This method proved successful. However, it's crucial to ensure that the same approach is adopted in both production and COB environments to maintain consistency in assigning row numbers.
+
+I look forward to your feedback and any further recommendations you may have to optimize this process.
+
+Thank you.
+
+Best regards,
+
+[Your Na
