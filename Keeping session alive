@@ -70,3 +70,22 @@ resultDF.show()
 
 
 val resultDF = df.withColumn("substring", substring(col("yourColumn"), 1, 5))
+
+
+
+=======
+
+
+val resultDf = rowCount match {
+      case count if count > 10 =>
+        // Perform operations for count > 10
+        df.filter(df("some_column") > some_value)
+      
+      case count if count > 5 && count <= 10 =>
+        // Perform operations for 5 < count <= 10
+        df.withColumn("new_column", df("some_column") * some_value)
+      
+      case _ =>
+        // Optionally handle other cases
+        df
+    }
