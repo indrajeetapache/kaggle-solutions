@@ -1,45 +1,49 @@
-To use Apache Spark with Kerberos authentication in Scala, you typically need to ensure that your Spark environment is properly configured to communicate with the Kerberos Key Distribution Center (KDC) and that you have a valid Kerberos ticket.
-
-Here is a high-level example of how you might write Scala code for Spark that uses Kerberos for authentication. Note that actual production code will depend on the specifics of your Kerberos setup, Hadoop configuration, and Spark environment.
-
-```scala
-import org.apache.spark.SparkConf
+import org.apache.spark.scheduler._
 import org.apache.spark.SparkContext
-import org.apache.hadoop.security.UserGroupInformation
-import org.apache.hadoop.conf.Configuration
 
-object SparkKerberosExample {
-  def main(args: Array[String]): Unit = {
-    // Configure Spark to use Kerberos
-    val sparkConf = new SparkConf()
-      .setAppName("SparkKerberosExample")
-      // Set master to local for testing; in production, this would be set to your cluster's master
-      .setMaster("local[*]") 
-      // Set Hadoop configuration properties for Kerberos
-      .set("spark.hadoop.fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem")
-      .set("spark.hadoop.hadoop.security.authentication", "kerberos")
+// Define a custom SparkListener
+class CustomSparkListener extends SparkListener {
 
-    val sc = new SparkContext(sparkConf)
+  override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
+    println(s"Application has ended at time ${applicationEnd.time}")
+  }
 
-    // Assuming you have already logged in via kinit or a keytab is available
-    UserGroupInformation.setConfiguration(new Configuration())
-    UserGroupInformation.loginUserFromKeytab("your-principal-name@YOUR.REALM", "/path/to/your.keytab")
+  override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
+    println(s"Job started with job id ${jobStart.jobId} at time ${jobStart.time}")
+  }
 
-    // Now you can interact with HDFS/S3/any data source that requires Kerberos authentication
-    val rdd = sc.textFile("hdfs://your-kerberized-hdfs-cluster/path/to/file")
+  override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
+    println(s"Job ended with job id ${jobEnd.jobId} at time ${jobEnd.time}")
+  }
 
-    // Your Spark job logic goes here
-    val lineCount = rdd.count()
-    println(s"Total number of lines: $lineCount")
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
+    println(s"Stage completed with stage id ${stageCompleted.stageInfo.stageId}")
+  }
 
-    // Stop the Spark context
-    sc.stop()
+  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
+    println(s"Stage submitted with stage id ${stageSubmitted.stageInfo.stageId}")
+  }
+
+  override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = {
+    println(s"Task started with task id ${taskStart.taskInfo.taskId} on stage ${taskStart.stageId}")
+  }
+
+  override def onTaskGettingResult(taskGettingResult: SparkListenerTaskGettingResult): Unit = {
+    println(s"Task getting result with task id ${taskGettingResult.taskInfo.taskId}")
+  }
+
+  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+    println(s"Task ended with task id ${taskEnd.taskInfo.taskId} with reason ${taskEnd.reason}")
   }
 }
-```
 
-Remember to replace `your-principal-name@YOUR.REALM` and `/path/to/your.keytab` with your actual Kerberos principal name and keytab file path.
+// Now you can add your custom listener to the SparkContext
+val sc: SparkContext = new SparkContext(conf) // assuming conf is already defined as SparkConf
 
-Additionally, you will need to make sure that your `krb5.conf` and `core-site.xml` files are correctly configured for your environment, and these files should be available to your Spark application, typically placed in the `$HADOOP_CONF_DIR` or `$SPARK_CONF_DIR` directory.
+// Add the custom listener
+sc.addSparkListener(new CustomSparkListener)
 
-Before running this Scala code, you need to ensure that your environment is set up for Spark and Hadoop, and you have the necessary Kerberos configurations in place. This usually involves a fair amount of setup outside of the code itself, including network configurations, Kerberos principal creation, and more.
+// Your Spark application logic here
+
+// Stop the SparkContext at the end of your application
+sc.stop()
