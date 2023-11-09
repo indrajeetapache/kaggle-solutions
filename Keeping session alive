@@ -49,12 +49,3 @@ sc.addSparkListener(new CustomSparkListener)
 sc.stop()
 =========
 
-Hello Team,
-
-I have outlined a strategy for implementing idempotent operations within our framework on the Confluence page. I encourage everyone to review the proposed approach thoroughly.
-
-Please contribute your ideas and questions directly on the page. We will make every effort to address them promptly.
-
-Your feedback is invaluable to ensure we develop a robust solution.
-
-Thank you for your collaboration.
