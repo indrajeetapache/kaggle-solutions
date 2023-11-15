@@ -1,1 +1,26 @@
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions._
+
+// Assuming df is your DataFrame with columns col1, col2, col3
+def findSecondHighestColumn(df: DataFrame): DataFrame = {
+  val sortedCols = array_sort(array(df("col1"), df("col2"), df("col3")))
+  
+  // Get the second highest value (last but one in the sorted array)
+  val secondHighestValue = sortedCols.getItem(sortedCols.size - 2)
+
+  // Create a map from column names to their values
+  val columnsMap = Map(
+    "col1" -> df("col1"),
+    "col2" -> df("col2"),
+    "col3" -> df("col3")
+  )
+
+  // Find the column which contains the second highest value
+  val secondHighestColumn = columnsMap.find { case (_, colValue) => colValue === secondHighestValue }.map(_._1)
+
+  df.withColumn("second_highest_col", lit(secondHighestColumn))
+}
+
+// Usage
+val updatedDf = findSecondHighestColumn(yourDataFrame)
 
