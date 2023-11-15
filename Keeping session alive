@@ -57,3 +57,6 @@ def findSecondHighestColumn(df: DataFrame): DataFrame = {
 // Usage
 val updatedDf = findSecondHighestColumn(yourDataFrame)
 
+
+How does Unravel Data determine the performance efficiency of code? For instance, when extracting the maximum value from a dataframe, various methods can be employed, such as using a 'max' function or specifying row numbers. How does Unravel identify the most optimized method for such operations? Additionally, while Spark employs a cost-based optimizer, what similar tools or methodologies does Unravel use for optimization?
+
