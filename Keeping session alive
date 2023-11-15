@@ -23,4 +23,37 @@ def findSecondHighestColumn(df: DataFrame): DataFrame = {
 
 // Usage
 val updatedDf = findSecondHighestColumn(yourDataFrame)
+===================
+
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.DataFrame
+
+def findSecondHighestColumn(df: DataFrame): DataFrame = {
+  // Create an array of struct (column_name, value) and then explode it
+  val dfLong = df.withColumn(
+    "col_values",
+    explode(array(
+      struct(lit("col1") as "column_name", $"col1" as "value"),
+      struct(lit("col2") as "column_name", $"col2" as "value"),
+      struct(lit("col3") as "column_name", $"col3" as "value")
+    ))
+  ).select($"*", $"col_values.column_name", $"col_values.value")
+
+  // Define a window partitioned by original row identifiers and ordered by value
+  val windowSpec = Window.partitionBy("id").orderBy($"value".desc) // Replace "id" with your row identifier
+
+  // Rank the values and filter for rank 2
+  val dfRanked = dfLong.withColumn("rank", rank().over(windowSpec))
+                      .filter($"rank" === 2)
+
+  // Join back with the original DataFrame to get the column name of the second highest value
+  val result = df.join(dfRanked, Seq("id"), "left") // Replace "id" with your row identifier
+                 .select(df.columns.map(df(_)) :+ dfRanked("column_name"): _*)
+
+  result
+}
+
+// Usage
+val updatedDf = findSecondHighestColumn(yourDataFrame)
 
