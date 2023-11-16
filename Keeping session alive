@@ -29,3 +29,30 @@ def findSecondHighestColumn(df: DataFrame): DataFrame = {
 
 // Usage
 val updatedDf = findSecondHighestColumn(yourDataFrame)
+
+
+========================================
+Subject: Introducing New Authentication Utility for Simplified Token Generation
+
+Hi Team,
+
+I hope this email finds you well.
+
+I am excited to announce the rollout of a new utility that we have developed to streamline our authentication process. This tool is specifically designed to dynamically generate unique authentication tokens, greatly simplifying the process for our application teams.
+
+Key Features and Benefits:
+
+Dynamic Token Generation: The utility automatically creates unique auth tokens, ensuring secure and streamlined access for users.
+Ease of Use for Application Teams: With this tool, application teams can seamlessly create Kerberos tokens without the need for intricate coding or manual intervention. This simplifies the authentication process significantly.
+Centralized Updates: In the future, should there be any need for changes or updates in the authentication process, these can be implemented directly in this utility. This means we will only need to modify this single script, rather than making widespread changes across multiple applications.
+Reduced Burden: By centralizing this function, we significantly reduce the workload on our application teams, allowing them to focus more on core development tasks.
+Next Steps:
+
+Integration: We encourage all application teams to start integrating this utility into their systems.
+Feedback: Your feedback is crucial. Please share your experiences and suggestions to help us improve the utility further.
+Support: For any questions or assistance in integrating this utility, please do not hesitate to contact [Support Contact Information].
+We believe this utility marks a significant step towards enhancing our operational efficiency and security. Your cooperation and proactive involvement in integrating and utilizing this new tool are highly appreciated.
+
+Thank you for your continued support and collaboration.
+
+Best regards,
