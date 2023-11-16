@@ -1,16 +1,51 @@
-Requirements:
+Certainly! Here's a JIRA story description for adding support to a file ingestion framework to handle multiline files with multi-character delimiters:
 
-Avro File Reading: The framework should be able to read Avro files efficiently. This includes handling both schema and schema-less Avro data.
-Schema Management: It should manage and interpret Avro schemas. This includes the ability to handle schema evolution where the schema may change over time, ensuring compatibility with older versions of the data.
-Integration with Existing Systems: The Avro file support must integrate seamlessly with the existing framework, without disrupting current functionalities. This requires thorough testing to ensure compatibility.
-Performance Optimization: The implementation should be optimized for performance, ensuring that the ingestion of Avro files is as efficient as possible.
-Error Handling: Robust error handling mechanisms should be in place to deal with issues like corrupted files, schema mismatches, and other potential anomalies.
-Documentation: Comprehensive documentation should be provided, detailing how to use the new Avro file reading capabilities, including examples and best practices.
-Testing: Extensive unit and integration tests must be written to cover all new code. This includes tests for various Avro file scenarios, schema evolution cases, and performance benchmarks.
-Acceptance Criteria:
+---
 
-Successful Avro File Reading: The system should be able to read Avro files of various sizes and schemas without errors.
-Schema Evolution Handling: The framework must correctly handle different versions of Avro schemas.
-No Regression: Existing functionalities of the file ingestion framework should remain intact and perform as expected.
-Documentation Completion: All documentation related to Avro file support should be completed and reviewed.
-Testing Coverage: Code coverage for new functionality should meet or exceed the project's standard threshold.
+### Title: Extend File Ingestion Framework to Support Multiline Files with Multi-Character Delimiters
+
+**Story ID:** [Unique ID]
+
+#### Description:
+
+**Objective:** The aim of this story is to enhance our file ingestion framework to efficiently process multiline files that use multi-character delimiters. This functionality is crucial for handling complex data formats often found in logs, advanced data streams, and certain types of legacy data systems.
+
+**Background:** Our current framework efficiently handles single-line records with common delimiters (like commas, tabs, etc.). However, as we increasingly encounter data sources with multiline records and unconventional multi-character delimiters, the need for this extended functionality has become apparent. These data sources include verbose logging systems, nested data structures, and custom-formatted export files.
+
+**Requirements:**
+1. **Multiline Record Parsing:** The framework should be equipped to correctly parse and ingest data from files with records spanning multiple lines.
+
+2. **Multi-Character Delimiter Support:** It should handle files with multi-character delimiters, ensuring that data is accurately separated and processed.
+
+3. **Robust Parsing Algorithm:** Develop a robust parsing algorithm that can correctly identify record boundaries and field delimiters, even in complex, nested, or irregular data structures.
+
+4. **Configurability:** Users should be able to specify the delimiter characters and the criteria for identifying record boundaries.
+
+5. **Error Handling and Logging:** Implement comprehensive error handling and logging mechanisms to address issues like malformed records, unexpected file formats, and delimiter inconsistencies.
+
+6. **Performance Considerations:** Ensure the parsing mechanism is optimized for performance, particularly for large files and high-throughput scenarios.
+
+7. **Documentation and Examples:** Provide detailed documentation and usage examples, specifically highlighting cases with nested data structures and multiline records.
+
+8. **Testing and Validation:** Develop a suite of tests, including unit tests, integration tests, and performance benchmarks, to validate the functionality across various file types and sizes.
+
+#### Acceptance Criteria:
+
+1. **Accurate Parsing:** The framework should accurately parse multiline files with multi-character delimiters without data loss or corruption.
+
+2. **Configurability and Flexibility:** Users should be able to easily configure the system for different file formats and delimiters.
+
+3. **Performance Benchmarks:** The solution must meet predefined performance benchmarks for file processing speed and resource utilization.
+
+4. **Documentation and Example Completeness:** All documentation and examples should be comprehensive, clear, and validated for accuracy.
+
+5. **Test Coverage and Success:** Achieve full test coverage for the new features with all tests passing.
+
+#### Notes:
+- Engage with stakeholders to gather examples of target file formats for testing purposes.
+- Review potential edge cases in file formats to ensure robustness in parsing logic.
+- Consider potential integration points with existing data validation and transformation features in the framework.
+
+---
+
+This JIRA story includes detailed requirements, acceptance criteria, and additional notes to ensure a comprehensive approach to implementing support for multiline files with multi-character delimiters in the file ingestion framework.
