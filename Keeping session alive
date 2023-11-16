@@ -1,98 +1,16 @@
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions._
+Requirements:
 
-// Assuming df is your DataFrame with columns col1, col2, col3
-def findSecondHighestColumn(df: DataFrame): DataFrame = {
-  val sortedCols = array_sort(array(df("col1"), df("col2"), df("col3")))
-  
-  // Get the second highest value (last but one in the sorted array)
-  val secondHighestValue = sortedCols.getItem(sortedCols.size - 2)
+Avro File Reading: The framework should be able to read Avro files efficiently. This includes handling both schema and schema-less Avro data.
+Schema Management: It should manage and interpret Avro schemas. This includes the ability to handle schema evolution where the schema may change over time, ensuring compatibility with older versions of the data.
+Integration with Existing Systems: The Avro file support must integrate seamlessly with the existing framework, without disrupting current functionalities. This requires thorough testing to ensure compatibility.
+Performance Optimization: The implementation should be optimized for performance, ensuring that the ingestion of Avro files is as efficient as possible.
+Error Handling: Robust error handling mechanisms should be in place to deal with issues like corrupted files, schema mismatches, and other potential anomalies.
+Documentation: Comprehensive documentation should be provided, detailing how to use the new Avro file reading capabilities, including examples and best practices.
+Testing: Extensive unit and integration tests must be written to cover all new code. This includes tests for various Avro file scenarios, schema evolution cases, and performance benchmarks.
+Acceptance Criteria:
 
-  // Create a map from column names to their values
-  val columnsMap = Map(
-    "col1" -> df("col1"),
-    "col2" -> df("col2"),
-    "col3" -> df("col3")
-  )
-
-  // Find the column which contains the second highest value
-  val secondHighestColumn = columnsMap.find { case (_, colValue) => colValue === secondHighestValue }.map(_._1)
-
-  df.withColumn("second_highest_col", lit(secondHighestColumn))
-}
-
-// Usage
-val updatedDf = findSecondHighestColumn(yourDataFrame)
-===================
-
-import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.DataFrame
-
-
-===============
-
-import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.DataFrame
-
-def findSecondHighestColumn(df: DataFrame): DataFrame = {
-  // Create an array of struct (column_name, value) and then explode it
-  val dfLong = df.withColumn(
-    "col_values",
-    explode(array(
-      struct(lit("count_2") as "column_name", $"count_2" as "value"),
-      struct(lit("count_3") as "column_name", $"count_3" as "value"),
-      struct(lit("count_4") as "column_name", $"count_4" as "value")
-    ))
-  ).select($"*", $"col_values.column_name", $"col_values.value")
-
-  // Define a window partitioned by original row identifiers and ordered by value
-  val windowSpec = Window.partitionBy("id").orderBy($"value".desc) // Replace "id" with your row identifier
-
-  // Rank the values and filter for rank 2
-  val dfRanked = dfLong.withColumn("rank", rank().over(windowSpec))
-                      .filter($"rank" === 2)
-
-  // Join back with the original DataFrame to get the column name of the second highest value
-  val result = df.join(dfRanked, Seq("id"), "left") // Replace "id" with your row identifier
-                 .select(df.columns.map(df(_)) :+ dfRanked("column_name"): _*)
-
-  result
-}
-
-// Usage
-val updatedDf = findSecondHighestColumn(yourDataFrame)
-
-
-def findSecondHighestColumn(df: DataFrame): DataFrame = {
-  // Create an array of struct (column_name, value) and then explode it
-  val dfLong = df.withColumn(
-    "col_values",
-    explode(array(
-      struct(lit("col1") as "column_name", $"col1" as "value"),
-      struct(lit("col2") as "column_name", $"col2" as "value"),
-      struct(lit("col3") as "column_name", $"col3" as "value")
-    ))
-  ).select($"*", $"col_values.column_name", $"col_values.value")
-
-  // Define a window partitioned by original row identifiers and ordered by value
-  val windowSpec = Window.partitionBy("id").orderBy($"value".desc) // Replace "id" with your row identifier
-
-  // Rank the values and filter for rank 2
-  val dfRanked = dfLong.withColumn("rank", rank().over(windowSpec))
-                      .filter($"rank" === 2)
-
-  // Join back with the original DataFrame to get the column name of the second highest value
-  val result = df.join(dfRanked, Seq("id"), "left") // Replace "id" with your row identifier
-                 .select(df.columns.map(df(_)) :+ dfRanked("column_name"): _*)
-
-  result
-}
-
-// Usage
-val updatedDf = findSecondHighestColumn(yourDataFrame)
-
-
-How does Unravel Data determine the performance efficiency of code? For instance, when extracting the maximum value from a dataframe, various methods can be employed, such as using a 'max' function or specifying row numbers. How does Unravel identify the most optimized method for such operations? Additionally, while Spark employs a cost-based optimizer, what similar tools or methodologies does Unravel use for optimization?
-
+Successful Avro File Reading: The system should be able to read Avro files of various sizes and schemas without errors.
+Schema Evolution Handling: The framework must correctly handle different versions of Avro schemas.
+No Regression: Existing functionalities of the file ingestion framework should remain intact and perform as expected.
+Documentation Completion: All documentation related to Avro file support should be completed and reviewed.
+Testing Coverage: Code coverage for new functionality should meet or exceed the project's standard threshold.
