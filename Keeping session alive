@@ -1,1 +1,47 @@
+import org.apache.spark.scheduler._
+import scala.collection.mutable
+import org.apache.spark.executor.TaskMetrics
+import scala.Option
 
+class SparkAppCustomListener extends SparkListener {
+  var jvmGCTime: Long = 0L
+  var totalRecordRead: Long = 0L
+  var totalRecordWritten: Long = 0L
+  val stageMap: mutable.Map[Int, Int] = mutable.HashMap()
+
+  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+    val metrics: TaskMetrics = taskEnd.taskMetrics
+    jvmGCTime += metrics.jvmGCTime
+    totalRecordRead += metrics.inputMetrics.recordsRead
+    totalRecordWritten += metrics.outputMetrics.recordsWritten
+  }
+
+  override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
+    val appId = applicationStart.appId
+    val user = applicationStart.sparkUser
+    val attemptId = applicationStart.appAttemptId
+    println(s"Application id: $appId, userId: $user")
+  }
+
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
+    val tasks = stageCompleted.stageInfo.numTasks
+    val stageId = stageCompleted.stageInfo.stageId
+    stageMap.put(stageId, tasks)
+  }
+
+  override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
+    val time = applicationEnd.time
+    println(s"Total JVM GC Time: $jvmGCTime")
+    println(s"Total records read: $totalRecordRead")
+    println(s"Total records written: $totalRecordWritten")
+    stageMap.foreach { case (id, tasks) =>
+      println(s"StageId: $id - tasks: $tasks")
+    }
+  }
+
+  override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
+    val logEvent = executorAdded.logEvent
+    val executorId = executorAdded.executorId
+    // Additional logic for executor added event
+  }
+}
