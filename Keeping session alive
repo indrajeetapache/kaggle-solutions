@@ -39,9 +39,14 @@ class SparkAppCustomListener extends SparkListener {
     }
   }
 
-  override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
-    val logEvent = executorAdded.logEvent
-    val executorId = executorAdded.executorId
-    // Additional logic for executor added event
-  }
+ override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
+  val executorId = executorAdded.executorId
+  val executorInfo = executorAdded.executorInfo
+  val time = executorAdded.time
+
+  // You can log these details as per your requirement
+  println(s"Executor added at time: $time, Executor ID: $executorId, Executor Info: $executorInfo")
+  
+  // Additional logic for executor added event
+}
 }
