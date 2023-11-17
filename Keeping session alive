@@ -1,14 +1,18 @@
-streamingquerylistener
-object StreamingQueryPrintingListener extends StreamingQueryListener {
-  override def onQueryStarted(event: StreamingQueryListener.QueryStartedEvent): Unit = {
-    println(s">>> Query started ${event}")
+import org.apache.spark.sql.streaming.StreamingQueryListener
+import org.apache.spark.sql.streaming.StreamingQueryListener._
+
+class StreamingQueryPrintingListener extends StreamingQueryListener {
+  
+  override def onQueryStarted(event: QueryStartedEvent): Unit = {
+    println(s">>> Query started: ${event.id}")
   }
 
-  override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
-    println(s">>> Query made progress ${event}")
+  override def onQueryProgress(event: QueryProgressEvent): Unit = {
+    println(s">>> Query made progress: ${event.progress}")
   }
 
-  override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
-    println(s">>> Query terminated ${event}")
+  override def onQueryTerminated(event: QueryTerminatedEvent): Unit = {
+    println(s">>> Query terminated: ${event.id}")
+    event.exception.foreach(ex => println(s"Exception: $ex"))
   }
 }
