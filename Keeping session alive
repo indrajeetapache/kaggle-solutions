@@ -1,1 +1,14 @@
 streamingquerylistener
+object StreamingQueryPrintingListener extends StreamingQueryListener {
+  override def onQueryStarted(event: StreamingQueryListener.QueryStartedEvent): Unit = {
+    println(s">>> Query started ${event}")
+  }
+
+  override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
+    println(s">>> Query made progress ${event}")
+  }
+
+  override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
+    println(s">>> Query terminated ${event}")
+  }
+}
