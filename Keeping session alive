@@ -1,52 +1,28 @@
-import org.apache.spark.scheduler._
-import scala.collection.mutable
-import org.apache.spark.executor.TaskMetrics
-import scala.Option
+import org.apache.spark.sql.execution.QueryExecution
+import org.apache.spark.sql.util.QueryExecutionListener
+import scala.collection.JavaConverters._
 
-class SparkAppCustomListener extends SparkListener {
-  var jvmGCTime: Long = 0L
-  var totalRecordRead: Long = 0L
-  var totalRecordWritten: Long = 0L
-  val stageMap: mutable.Map[Int, Int] = mutable.HashMap()
+class SparkQueryListener extends QueryExecutionListener {
+  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
+    val id = qe.id
+    val stats = qe.stringWithStats
+    println(s"Query Stats: $stats")
+    println(s"Query Id: $id")
 
-  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-    val metrics: TaskMetrics = taskEnd.taskMetrics
-    jvmGCTime += metrics.jvmGCTime
-    totalRecordRead += metrics.inputMetrics.recordsRead
-    totalRecordWritten += metrics.outputMetrics.recordsWritten
-  }
-
-  override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
-    val appId = applicationStart.appId
-    val user = applicationStart.sparkUser
-    val attemptId = applicationStart.appAttemptId
-    println(s"Application id: $appId, userId: $user")
-  }
-
-  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
-    val tasks = stageCompleted.stageInfo.numTasks
-    val stageId = stageCompleted.stageInfo.stageId
-    stageMap.put(stageId, tasks)
-  }
-
-  override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
-    val time = applicationEnd.time
-    println(s"Total JVM GC Time: $jvmGCTime")
-    println(s"Total records read: $totalRecordRead")
-    println(s"Total records written: $totalRecordWritten")
-    stageMap.foreach { case (id, tasks) =>
-      println(s"StageId: $id - tasks: $tasks")
+    val it = qe.executedPlan.metrics.iterator.asScala
+    while (it.hasNext) {
+      val tuple2 = it.next()
+      println(s"Metric - ${tuple2._1}: ${tuple2._2}")
     }
   }
 
- override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
-  val executorId = executorAdded.executorId
-  val executorInfo = executorAdded.executorInfo
-  val time = executorAdded.time
+  override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit = {
+    val it = qe.executedPlan.metrics.iterator.asScala
+    println(s"Exception - ${exception.getMessage}")
 
-  // You can log these details as per your requirement
-  println(s"Executor added at time: $time, Executor ID: $executorId, Executor Info: $executorInfo")
-  
-  // Additional logic for executor added event
-}
+    while (it.hasNext) {
+      val tuple2 = it.next()
+      println(s"${tuple2._1}: ${tuple2._2}")
+    }
+  }
 }
