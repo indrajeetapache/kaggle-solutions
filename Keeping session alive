@@ -16,3 +16,4 @@ class StreamingQueryPrintingListener extends StreamingQueryListener {
     event.exception.foreach(ex => println(s"Exception: $ex"))
   }
 }
+https://www.programcreek.com/scala/org.apache.spark.sql.streaming.StreamingQueryListener
