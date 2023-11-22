@@ -1,19 +1,22 @@
-import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener._
+val output = new StringBuilder
+val error = new StringBuilder
 
-class StreamingQueryPrintingListener extends StreamingQueryListener {
-  
-  override def onQueryStarted(event: QueryStartedEvent): Unit = {
-    println(s">>> Query started: ${event.id}")
-  }
+val logger = ProcessLogger(
+  (o: String) => output.append(o + "\n"),
+  (e: String) => error.append(e + "\n")
+)
 
-  override def onQueryProgress(event: QueryProgressEvent): Unit = {
-    println(s">>> Query made progress: ${event.progress}")
-  }
+val exitCode = command.!(logger)
 
-  override def onQueryTerminated(event: QueryTerminatedEvent): Unit = {
-    println(s">>> Query terminated: ${event.id}")
-    event.exception.foreach(ex => println(s"Exception: $ex"))
-  }
+println(s"Exit code: $exitCode")
+if (output.nonEmpty) {
+  println(s"Output:\n$output")
+} else {
+  println("No output was captured from the standard output stream.")
 }
-https://www.programcreek.com/scala/org.apache.spark.sql.streaming.StreamingQueryListener
+
+if (error.nonEmpty) {
+  println(s"Error:\n$error")
+} else {
+  println("No output was captured from the standard error stream.")
+}
