@@ -1,22 +1,19 @@
-val output = new StringBuilder
-val error = new StringBuilder
+ val output = new StringBuilder
+  val error = new StringBuilder
 
-val logger = ProcessLogger(
-  (o: String) => output.append(o + "\n"),
-  (e: String) => error.append(e + "\n")
-)
+  val exitCode = command ! ProcessLogger(
+    (out: String) => output.append(out + "\n"),
+    (err: String) => error.append(err + "\n")
+  )
 
-val exitCode = command.!(logger)
+  if (output.nonEmpty) {
+    println(s"Output: $output")
+  } else {
+    println("No output captured.")
+  }
 
-println(s"Exit code: $exitCode")
-if (output.nonEmpty) {
-  println(s"Output:\n$output")
-} else {
-  println("No output was captured from the standard output stream.")
-}
-
-if (error.nonEmpty) {
-  println(s"Error:\n$error")
-} else {
-  println("No output was captured from the standard error stream.")
-}
+  if (error.nonEmpty) {
+    println(s"Errors: $error")
+  } else {
+    println("No errors captured.")
+  }
