@@ -84,4 +84,33 @@ val shellCommand = Seq(
 
 // Run the command using bash, which allows the environment variables to be set
 val result = Process(shellCommand).!
+==================================
+import scala.sys.process._
+
+val whoami = "whoami".!!.trim
+val hostname = "hostname -f".!!.trim
+val krb5Config = "/opt/Cloudera/KRB5/krb5.conf"
+val realm = "sed -rn 's/^[ \t]*default_realm = (.*)/\\1/p' /etc/krb5/krb5.conf".!!.trim
+val krb5ccName = s"/tmp/krb5cc_${"id -u".!!.trim}_${System.currentTimeMillis()/1000}"
+
+// Construct the kinit command with the actual values obtained from executing the shell commands
+val kinitCommand = s"kinit -kt /opt/Cloudera/keytabs/$whoami/$hostname@$realm"
+
+// Now, prepare the shell command to include setting the environment variables
+val shellCommand = Seq("bash", "-c", 
+  s"""
+  export KRB5_CONFIG=$krb5Config
+  export KRB5CCNAME=$krb5ccName
+  $kinitCommand
+  """)
+
+// Execute the shell command
+val result = Process(shellCommand).!
+
+// Check the result
+if (result == 0) {
+  println(s"Command executed successfully: $kinitCommand")
+} else {
+  println(s"Command failed with exit code $result: $kinitCommand")
+}
 
