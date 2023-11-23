@@ -59,3 +59,29 @@ val command = Seq("bash", "-c", s". $scriptPath; $functionName")
 // Execute the command
 val output = command.!!
 println(output)
+===========
+
+import scala.sys.process._
+
+val krb5Config = "/opt/Cloudera/KRB5/krb5.conf"
+val krb5ccName = s"/tmp/krb5cc_${"id -u".!!.trim}_${System.currentTimeMillis()/1000}"
+
+// Set the environment variables for the command
+val envVars = Seq(
+  "KRB5_CONFIG" -> krb5Config,
+  "KRB5CCNAME" -> krb5ccName
+)
+
+// Prepare the command to be executed by the shell
+val shellCommand = Seq(
+  "bash", "-c", 
+  s"""
+  export KRB5_CONFIG=$krb5Config
+  export KRB5CCNAME=$krb5ccName
+  kinit -kt /opt/Cloudera/keytabs/$(whoami)/$(hostname -f)@$(sed -rn 's/^[ \\t]*default_realm = (.*)/\\1/p' /etc/krb5/krb5.conf)
+  """
+)
+
+// Run the command using bash, which allows the environment variables to be set
+val result = Process(shellCommand).!
+
