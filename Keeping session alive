@@ -91,6 +91,9 @@ val whoami = "whoami".!!.trim
 val hostname = "hostname -f".!!.trim
 val krb5Config = "/opt/Cloudera/KRB5/krb5.conf"
 val realm = "sed -rn 's/^[ \t]*default_realm = (.*)/\\1/p' /etc/krb5/krb5.conf".!!.trim
+val realmCommand = "sed -rn 's/^[ \\t]*default_realm = (.*)/\\1/p' /etc/krb5/krb5.conf"
+val realm = Process(Seq("bash", "-c", realmCommand)).!!.trim
+
 val krb5ccName = s"/tmp/krb5cc_${"id -u".!!.trim}_${System.currentTimeMillis()/1000}"
 
 // Construct the kinit command with the actual values obtained from executing the shell commands
