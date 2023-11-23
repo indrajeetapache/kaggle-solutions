@@ -1,1 +1,49 @@
-==
+import sys.process._
+import java.io.File
+
+object SparkKerberosInit extends App {
+
+  // Define the commands as strings
+  val krb5Config = "/opt/Cloudera/KRB5/krb5.conf"
+  val krb5ccName = s"/tmp/krb5cc_${"id -u".!!.trim}_${System.currentTimeMillis()/1000}"
+
+  // Set the environment variables
+  val env = Seq(
+    s"KRB5_CONFIG=$krb5Config",
+    s"KRB5CCNAME=$krb5ccName"
+  )
+
+  // Define the init and destroy functions
+  def krbInit(): Unit = {
+    println("krb init called")
+    val initCommand = s"kinit -kt /opt/Cloudera/keytabs/${"whoami".!!.trim}/${"hostname -f".!!.trim}@${"sed -rn 's/^[ \t]*default_realm = (.*)/\\1/p' /etc/krb5/krb5.conf".!!}"
+    val result = Process(initCommand, None, env:_*).!
+    if (result == 0) {
+      println(s"Kerberos token generated: $krb5ccName")
+    } else {
+      println(s"Failed to generate Kerberos token: $krb5ccName")
+      System.exit(1)
+    }
+  }
+
+  def krbDestroy(): Unit = {
+    println(s"krb destroy : $krb5ccName")
+    val destroyCommand = s"kdestroy -c $krb5ccName"
+    val result = Process(destroyCommand, None, env:_*).!
+    if (result != 0) {
+      println("Failed to destroy Kerberos token")
+    }
+  }
+
+  // Initialize Kerberos
+  krbInit()
+
+  // Here would be the rest of your Spark application code
+  // For example:
+  // val conf = new SparkConf().setAppName("Spark Kerberos Init Example")
+  // val sc = new SparkContext(conf)
+  // ... your Spark jobs ...
+
+  // Destroy Kerberos token after your jobs are done
+  krbDestroy()
+}
