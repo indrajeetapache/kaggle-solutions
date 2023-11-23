@@ -47,3 +47,15 @@ object SparkKerberosInit extends App {
   // Destroy Kerberos token after your jobs are done
   krbDestroy()
 }
+=====
+import scala.sys.process._
+
+val scriptPath = "path/to/script.sh" // Replace with the actual path to your script
+val functionName = "krb_init" // The function you want to call
+
+// Command to source the script and call the function
+val command = Seq("bash", "-c", s". $scriptPath; $functionName")
+
+// Execute the command
+val output = command.!!
+println(output)
