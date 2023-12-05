@@ -1,1 +1,76 @@
-Resolved 310 defects and stories, ensuring product quality.Managed 10 consecutive BVT services single-handedly.Achieved a 95% success rate for all RC builds.Coordinated with six application teams, developers, and testers for BVT efficiency.Served as a critical gatekeeper for the MBP process.Independently handled the GA release for the 2022 Future Forward initiative.Seeking to join an Application team to apply functional and automation skills.Aiming to enhance learning and contribute to application development.Looking for mentorship and opportunities in advanced automation.Committed to expanding expertise and adding value to new roles.
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import scala.util.Try
+
+class IdempotentDataProcessor(spark: SparkSession) {
+
+  // Extract partition columns from Hive table and validate
+  def processHiveTable(tableName: String): DataFrame = {
+    val partitionColumns = getPartitionColumns(tableName)
+    if (partitionColumns.isEmpty) {
+      println("Table is non-partitioned. Idempotent cannot be applied.")
+      return spark.emptyDataFrame
+    }
+
+    // Check if any partition column is a valid date
+    val isValidPartitionScheme = partitionColumns.exists(isDateColumn)
+
+    if (!isValidPartitionScheme) {
+      println("No valid date partition column found. Exiting process.")
+      return spark.emptyDataFrame
+    }
+
+    // Placeholder for further processing logic
+    spark.emptyDataFrame 
+  }
+
+  // Get partition columns from Hive table
+  def getPartitionColumns(tableName: String): Seq[String] = {
+    val partitionInfo = spark.sql(s"SHOW PARTITIONS $tableName")
+    partitionInfo.collect().flatMap(row => row.getString(0).split("/")).map(_.split("=")(0)).distinct
+  }
+
+  // Check if the partition column is a date in various formats
+  def isDateColumn(columnName: String): Boolean = {
+    // Assuming the latest partition value is to be checked
+    val latestPartitionValue = spark.sql(s"SELECT MAX($columnName) FROM $tableName").collect()(0)(0).toString
+
+    val dateFormats = Seq(
+      "yyyyMMdd", "yyyyMM", "yyyy-MM", "yyyy_MM", 
+      "MMyyyy", "MMM-yyyy", "MM_yyyy", "yyyy-MM-dd", "yyyy-dd-MM"
+    )
+    dateFormats.exists(format => isValidDate(latestPartitionValue, format))
+  }
+
+  // Helper method to check date validity
+  def isValidDate(date: String, format: String): Boolean = {
+    Try(LocalDate.parse(date, DateTimeFormatter.ofPattern(format))).isSuccess
+  }
+
+  // Method to join two DataFrames with a flag
+  def processDataFrame(df1: DataFrame, df2: DataFrame, joinColumns: Seq[String]): DataFrame = {
+    // Perform a left outer join
+    val joinedDf = df1.join(df2, joinColumns, "left_outer")
+
+    // Add a flag column
+    val finalDf = joinedDf.withColumn("Flag", when(df2(joinColumns.head).isNull, 1).otherwise(0))
+
+    finalDf
+  }
+}
+
+// Usage
+val spark = SparkSession.builder.appName("IdempotentDataProcessor").getOrCreate()
+val processor = new IdempotentDataProcessor(spark)
+
+// Example usage with Hive
+val hiveTableName = "your_hive_table_name"
+val hiveDataFrame = processor.processHiveTable(hiveTableName)
+
+// Example DataFrame operations for join and flag
+val df1 = // Load or define your DataFrame1
+val df2 = // Load or define your DataFrame2
+val joinColumns = Seq("AUDIT_RUNID", "AUDIT_FILE_NAME", "partitioncolumn") // Adjust these join columns as needed
+val finalDataFrame = processor.processDataFrame(df1, df2, joinColumns)
