@@ -1,1 +1,23 @@
 
+import org.apache.spark.sql.SparkSession
+
+def getPartitionColumns(spark: SparkSession, tableName: String): Seq[String] = {
+  // Execute 'SHOW CREATE TABLE' command to get the table's DDL
+  val createTableDDL = spark.sql(s"SHOW CREATE TABLE $tableName").collect().map(_.getString(0)).mkString("\n")
+
+  // Extract the partition column details from the DDL
+  val partitionPattern = "(?i)PARTITIONED BY\\s*\\(([^)]+)\\)".r
+  partitionPattern.findFirstMatchIn(createTableDDL) match {
+    case Some(matched) => 
+      val partitionPart = matched.group(1)
+      partitionPart.split(",").map(_.trim.split("\\s+")(0)) // Extracting column names
+    case None => 
+      Array[String]() // Return an empty array if the table is not partitioned
+  }
+}
+
+// Usage
+val spark: SparkSession = // your SparkSession
+val tableName = "your_table_name"
+val partitionColumns = getPartitionColumns(spark, tableName)
+partitionColumns.foreach(println)
