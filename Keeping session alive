@@ -21,3 +21,17 @@ val spark: SparkSession = // your SparkSession
 val tableName = "your_table_name"
 val partitionColumns = getPartitionColumns(spark, tableName)
 partitionColumns.foreach(println)
+
+
+====
+def getPartitionColumns(spark: SparkSession, tableName: String): Seq[String] = {
+    val partitionInfo = spark.sql(s"SHOW PARTITIONS $tableName")
+
+    // Extracting unique partition column names from partition data
+    val partitionColumns = partitionInfo.collect()
+        .flatMap(row => row.getString(0).split("/")) // Split each partition string into columns
+        .map(partitionCol => partitionCol.split("=")(0)) // Extract the column name
+        .distinct // Remove duplicates
+
+    partitionColumns
+}
