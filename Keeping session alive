@@ -36,26 +36,3 @@ def getPartitionColumns(spark: SparkSession, tableName: String): Seq[String] = {
     partitionColumns
 }
 
-
-
-serializable or made serializable.
-// If 'logger' is not serializable, it should not be used inside the map operation.
-// Instead, use 'println' for logging or accumulate logs in an accumulator.
-
-val sepBroadcast = spark.sparkContext.broadcast(sep)
-val optionsMapBroadcast = spark.sparkContext.broadcast(optionsMap)
-
-var rdd: RDD[String] = spark.sparkContext.textFiles(filepath)
-.map(content => {
-  var rawStr = content
-  // Use broadcast variables inside the map
-  val sepValue = sepBroadcast.value
-  val optionsMapValue = optionsMapBroadcast.value
-  
-  if (sepValue.length > 1 && spark.version.startsWith("2")) {
-    rawStr = rawStr.replaceAll(sepValue, optionsMapValue("sep"))
-    // Do not use logger here if it's not serializable
-    println(s"sep: $sepValue -> ${optionsMapValue('sep')}")
-  }
-  rawStr.toCharArray
-})
