@@ -23,7 +23,7 @@ val partitionColumns = getPartitionColumns(spark, tableName)
 partitionColumns.foreach(println)
 
 
-====
+===================================================
 import org.apache.spark.sql.DataFrame
 import scala.util.matching.Regex
 
@@ -32,39 +32,29 @@ def isString(value: String): Boolean = {
     stringPattern.findFirstIn(value).isDefined
 }
 
-def matchesDateFormat(value: String, formats: List[String]): Boolean = {
-    // Function to check if a value matches any of the provided date formats
-    def checkFormat(format: String): Boolean = {
-        format match {
-            case "yyyymmdd" => value.matches("\\d{8}")
-            case "yyyymm"   => value.matches("\\d{6}")
-            case "yyyy"     => value.matches("\\d{4}")
-            case _          => false
-        }
-    }
-    formats.exists(checkFormat)
+def isLikelyDate(value: String): Boolean = {
+    // Define regex patterns for various date formats
+    val datePatterns = List("\\d{8}", "\\d{6}", "\\d{4}") // yyyymmdd, yyyymm, yyyy
+
+    // Check if the value matches any of the date patterns
+    datePatterns.exists(pattern => value.matches(pattern))
 }
 
 def validatePartitionColumns(df: DataFrame, partitionColumns: Array[String]): Array[String] = {
     partitionColumns.filter { col =>
         val sampleValue = df.select(col).first().getString(0).filter(_.isDigit)
-        if (col == "map_load_Date") {
-            // Check various date formats for the 'map_load_Date' column
-            !matchesDateFormat(sampleValue, List("yyyymmdd", "yyyymm", "yyyy"))
-        } else {
-            // For other columns, check if they are strings
-            !isString(sampleValue)
-        }
+
+        // Determine if the value is likely a date or a string
+        !isLikelyDate(sampleValue) && !isString(sampleValue)
     }
 }
 
 // Usage
 val df1: DataFrame = // Your DataFrame
-val partitionColumns = Array("map_load_Date", "file_name")
+val partitionColumns = Array("example_date_column", "example_string_column") // Replace with actual column names
 val validatedColumns = validatePartitionColumns(df1, partitionColumns)
 
 // Example to print validated columns
 validatedColumns.foreach(println)
 
-}
 
