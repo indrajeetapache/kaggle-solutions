@@ -56,5 +56,7 @@ val validatedColumns = validatePartitionColumns(df1, partitionColumns)
 
 // Example to print validated columns
 validatedColumns.foreach(println)
+===
+Version 3.3 of the file ingestion framework will introduce multiline, multi-delimiter processing, bad record segregation, and Avro file support.
 
 
