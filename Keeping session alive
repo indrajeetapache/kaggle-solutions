@@ -60,3 +60,4 @@ validatedColumns.foreach(println)
 Version 3.3 of the file ingestion framework will introduce multiline, multi-delimiter processing, bad record segregation, and Avro file support.
 
 
+file ingestion framework is poised to be a comprehensive solution for processing various file types. For more details on its release, click the provided links
