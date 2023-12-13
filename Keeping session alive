@@ -24,15 +24,47 @@ partitionColumns.foreach(println)
 
 
 ====
-def getPartitionColumns(spark: SparkSession, tableName: String): Seq[String] = {
-    val partitionInfo = spark.sql(s"SHOW PARTITIONS $tableName")
+import org.apache.spark.sql.DataFrame
+import scala.util.matching.Regex
 
-    // Extracting unique partition column names from partition data
-    val partitionColumns = partitionInfo.collect()
-        .flatMap(row => row.getString(0).split("/")) // Split each partition string into columns
-        .map(partitionCol => partitionCol.split("=")(0)) // Extract the column name
-        .distinct // Remove duplicates
+def isString(value: String): Boolean = {
+    val stringPattern: Regex = "^[A-Za-z]+$".r
+    stringPattern.findFirstIn(value).isDefined
+}
 
-    partitionColumns
+def matchesDateFormat(value: String, formats: List[String]): Boolean = {
+    // Function to check if a value matches any of the provided date formats
+    def checkFormat(format: String): Boolean = {
+        format match {
+            case "yyyymmdd" => value.matches("\\d{8}")
+            case "yyyymm"   => value.matches("\\d{6}")
+            case "yyyy"     => value.matches("\\d{4}")
+            case _          => false
+        }
+    }
+    formats.exists(checkFormat)
+}
+
+def validatePartitionColumns(df: DataFrame, partitionColumns: Array[String]): Array[String] = {
+    partitionColumns.filter { col =>
+        val sampleValue = df.select(col).first().getString(0).filter(_.isDigit)
+        if (col == "map_load_Date") {
+            // Check various date formats for the 'map_load_Date' column
+            !matchesDateFormat(sampleValue, List("yyyymmdd", "yyyymm", "yyyy"))
+        } else {
+            // For other columns, check if they are strings
+            !isString(sampleValue)
+        }
+    }
+}
+
+// Usage
+val df1: DataFrame = // Your DataFrame
+val partitionColumns = Array("map_load_Date", "file_name")
+val validatedColumns = validatePartitionColumns(df1, partitionColumns)
+
+// Example to print validated columns
+validatedColumns.foreach(println)
+
 }
 
