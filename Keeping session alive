@@ -42,7 +42,8 @@ def isLikelyDate(value: String): Boolean = {
 
 def validatePartitionColumns(df: DataFrame, partitionColumns: Array[String]): Array[String] = {
     partitionColumns.filter { col =>
-        val sampleValue = df.select(col).first().getString(0).filter(_.isDigit)
+        // Cast the column to string and get the first value, filtering out non-digit characters
+        val sampleValue = df.select(col).cast("string").first().getString(0).filter(_.isDigit)
 
         // Determine if the value is likely a date or a string
         !isLikelyDate(sampleValue) && !isString(sampleValue)
@@ -56,8 +57,3 @@ val validatedColumns = validatePartitionColumns(df1, partitionColumns)
 
 // Example to print validated columns
 validatedColumns.foreach(println)
-===
-Version 3.3 of the file ingestion framework will introduce multiline, multi-delimiter processing, bad record segregation, and Avro file support.
-
-
-file ingestion framework is poised to be a comprehensive solution for processing various file types. For more details on its release, click the provided links
