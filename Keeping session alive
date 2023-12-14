@@ -59,13 +59,4 @@ val validatedColumns = validatePartitionColumns(df1, partitionColumns)
 validatedColumns.foreach(println)
 
 ===
-// Listing directories at the table location
-val status = fs.listStatus(new Path(tableLocation))
 
-// Extracting partition information and finding the latest
-val latestPartitionPath = status
-  .filter(_.isDirectory)
-  .map(_.getPath.getName)
-  .filter(_.startsWith("part_col=")) // Replace 'part_col' with your partition column name
-  .sorted
-  .lastOption
