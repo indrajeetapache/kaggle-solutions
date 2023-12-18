@@ -28,7 +28,7 @@ partitionColumns.foreach(println)
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col
 import scala.util.matching.Regex
-import java.time.LocalDate
+import java.time.{LocalDate, Instant, ZoneId}
 import java.time.format.DateTimeFormatter
 
 def isString(value: String): Boolean = {
@@ -43,6 +43,18 @@ def isLikelyDate(value: String): Boolean = {
     val currentYearMonth = currentDate.format(DateTimeFormatter.ofPattern("yyyyMM"))
     val currentDateStr = currentDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
 
+    // Check for Unix timestamp pattern
+    val isUnixTimestamp = value.matches("\\d{10}")
+
+    val dateValue = if (isUnixTimestamp) {
+        // Convert Unix timestamp to LocalDate
+        val instant = Instant.ofEpochSecond(value.toLong)
+        val localDate = instant.atZone(ZoneId.systemDefault()).toLocalDate
+        localDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+    } else {
+        value
+    }
+
     // Define regex patterns for various date formats and the current date string
     val datePatterns = Map(
       "\\d{8}" -> currentDateStr, // yyyymmdd
@@ -52,7 +64,7 @@ def isLikelyDate(value: String): Boolean = {
 
     // Check if the value matches any of the date patterns and corresponds to the current date
     datePatterns.exists { case (pattern, dateString) =>
-        value.matches(pattern) && value == dateString
+        dateValue.matches(pattern) && dateValue == dateString
     }
 }
 
