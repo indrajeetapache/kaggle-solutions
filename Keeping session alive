@@ -26,7 +26,10 @@ partitionColumns.foreach(println)
 ===================================================
 
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.col
 import scala.util.matching.Regex
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 def isString(value: String): Boolean = {
     val stringPattern: Regex = "^[A-Za-z]+$".r
@@ -34,29 +37,41 @@ def isString(value: String): Boolean = {
 }
 
 def isLikelyDate(value: String): Boolean = {
-    // Define regex patterns for various date formats
-    val datePatterns = List("\\d{8}", "\\d{6}", "\\d{4}") // yyyymmdd, yyyymm, yyyy
+    // Get the current date
+    val currentDate = LocalDate.now()
+    val currentYear = currentDate.getYear.toString
+    val currentYearMonth = currentDate.format(DateTimeFormatter.ofPattern("yyyyMM"))
+    val currentDateStr = currentDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
 
-    // Check if the value matches any of the date patterns
-    datePatterns.exists(pattern => value.matches(pattern))
+    // Define regex patterns for various date formats and the current date string
+    val datePatterns = Map(
+      "\\d{8}" -> currentDateStr, // yyyymmdd
+      "\\d{6}" -> currentYearMonth, // yyyymm
+      "\\d{4}" -> currentYear // yyyy
+    )
+
+    // Check if the value matches any of the date patterns and corresponds to the current date
+    datePatterns.exists { case (pattern, dateString) =>
+        value.matches(pattern) && value == dateString
+    }
 }
 
 def validatePartitionColumns(df: DataFrame, partitionColumns: Array[String]): Array[String] = {
-    partitionColumns.filter { col =>
+    partitionColumns.filter { colName =>
         // Cast the column to string and get the first value, filtering out non-digit characters
-        val sampleValue = df.select(col).cast("string").first().getString(0).filter(_.isDigit)
+        val sampleValue = df.select(col(colName).cast("string")).first().getString(0).filter(_.isDigit)
 
         // Determine if the value is likely a date or a string
         !isLikelyDate(sampleValue) && !isString(sampleValue)
     }
 }
 
-// Usage
+// Usage example
 val df1: DataFrame = // Your DataFrame
 val partitionColumns = Array("example_date_column", "example_string_column") // Replace with actual column names
 val validatedColumns = validatePartitionColumns(df1, partitionColumns)
 
-// Example to print validated columns
+// Print validated columns
 validatedColumns.foreach(println)
 
 
