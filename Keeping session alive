@@ -91,45 +91,52 @@ validatedColumns.foreach(println)
 
 
 
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.col
-import scala.util.matching.Regex
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.time.format.{DateTimeFormatter, DateTimeParseException}
 
-def isString(value: String): Boolean = {
-    val stringPattern: Regex = "^[A-Za-z]+$".r
-    stringPattern.findFirstIn(value).isDefined
-}
-
-def isLikelyDate(value: String): Boolean = {
-    // Sanitize the input by removing non-digit characters
-    val sanitizedValue = value.filter(_.isDigit)
-
-    // Get the current date in yyyymmdd format
-    val currentDateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
-
-    // Define the regex pattern for yyyymmdd format
-    val pattern = "\\d{8}"
-
-    // Check if the sanitized value matches the yyyymmdd pattern and corresponds to the current date
-    sanitizedValue.matches(pattern) && sanitizedValue == currentDateStr
-}
-
-def validatePartitionColumns(df: DataFrame, partitionColumns: Array[String]): Array[String] = {
-    partitionColumns.filter { colName =>
-        // Cast the column to string and get the first value, filtering out non-digit characters
-        val sampleValue = df.select(col(colName).cast("string")).first().getString(0).filter(_.isDigit)
-
-        // Determine if the value is likely a date or a string
-        !isLikelyDate(sampleValue) && !isString(sampleValue)
+def isValidDate(value: String, format: String): Boolean = {
+    try {
+        LocalDate.parse(value, DateTimeFormatter.ofPattern(format))
+        true
+    } catch {
+        case _: DateTimeParseException => false
     }
 }
 
-// Usage example
-val df1: DataFrame = // Your DataFrame
-val partitionColumns = Array("example_date_column", "example_string_column") // Replace with actual column names
-val validatedColumns = validatePartitionColumns(df1, partitionColumns)
+def isCurrentYearOrMonth(value: String, format: String): Boolean = {
+    val currentDate = LocalDate.now()
+    val formattedDate = currentDate.format(DateTimeFormatter.ofPattern(format))
+    value == formattedDate
+}
 
-// Print validated columns
-validatedColumns.foreach(println)
+def isLikelyDate(value: String): Boolean = {
+    // Extend this list to include more date formats
+    val dateFormats = List(
+        "yyyyMMdd",     // Example: 20231219
+        "yyyy-MM-dd",   // Example: 2023-12-19
+        "yyyy/MM/dd",   // Example: 2023/12/19
+        // Add new formats here
+        "dd-MM-yyyy",   // Example: 19-12-2023
+        "dd/MM/yyyy",   // Example: 19/12/2023
+        "MM-dd-yyyy",   // Example: 12-19-2023
+        "MM/dd/yyyy",   // Example: 12/19/2023
+        "yyyy",         // Example: 2023
+        "yyyyMM",       // Example: 202312
+        "yyyy-MM",      // Example: 2023-12
+        "yyyy/MM"       // Example: 2023/12
+    )
+    
+    // Check if the value matches any of the date formats and corresponds to the current date
+    dateFormats.exists(format => {
+        if (format.length <= 6) // Formats without day (yyyy or yyyymm)
+            isCurrentYearOrMonth(value.filter(_.isDigit), format)
+        else
+            isValidDate(value, format) && LocalDate.parse(value, DateTimeFormatter.ofPattern(format)).isEqual(LocalDate.now())
+    })
+}
+
+// Example usage
+println(isLikelyDate("2023"))       // True if the current year is 2023
+println(isLikelyDate("202312"))     // True if the current year-month is December 2023
+println(isLikelyDate("2023-12"))    // True if the current year-month is December 2023
+println(isLikelyDate("2023/12"))    // True if the current year-month is December 2023
