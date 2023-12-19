@@ -149,3 +149,27 @@ println(isLikelyDate("2023"))       // True if the current year is 2023
 println(isLikelyDate("202312"))     // True if the current year-month is December 2023
 println(isLikelyDate("2023-12"))    // True if the current year-month is December 2023
 println(isLikelyDate("2023/12"))    // True if the current year-month is December 2023
+
+
+=========================
+
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions._
+
+val partitionColumns = Array("col1", "col2", "col3") // Example partition columns
+val source_df: DataFrame = // Your source DataFrame
+
+// Form the SELECT part of the query
+val selectStatement = partitionColumns.mkString("SELECT ", ", ", " FROM yourTableName")
+
+// Assuming we want to select unique values for the WHERE clause from the first row
+val uniqueRow = source_df.select(partitionColumns.map(col): _*).distinct().first()
+
+// Form the WHERE part of the query
+val whereConditions = partitionColumns.map(colName => s"$colName = '${uniqueRow.getAs[String](colName)}'").mkString(" WHERE ", " AND ", "")
+
+// Combine to form the complete SQL query
+val sqlQuery = selectStatement + whereConditions
+
+println(sqlQuery)
+
