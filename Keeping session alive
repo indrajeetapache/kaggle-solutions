@@ -173,3 +173,32 @@ val sqlQuery = selectStatement + whereConditions
 
 println(sqlQuery)
 
+=====================================================================
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.col
+
+// Assuming source_df is your DataFrame and partitionColumns are the columns you're interested in
+val partitionColumns = Array("col1", "col2", "col3") // Example partition columns
+val source_df: DataFrame = // Your source DataFrame
+
+// Step 1: Retrieve Distinct Combinations of Column Values
+val distinctCombinations = source_df.select(partitionColumns.map(col): _*).distinct()
+
+// Step 2: Retrieve Distinct Values for Each Column Separately
+def getDistinctValues(df: DataFrame, columnName: String): Array[Any] = {
+    df.select(columnName).distinct().collect().map(_.get(0))
+}
+
+val distinctValuesPerColumn = partitionColumns.map(columnName => {
+    val distinctValues = getDistinctValues(source_df, columnName)
+    (columnName, distinctValues)
+}).toMap
+
+// Example: Printing Results
+println("Distinct Combinations of Column Values:")
+distinctCombinations.show()
+
+println("Distinct Values Per Column:")
+distinctValuesPerColumn.foreach { case (colName, values) =>
+    println(s"$colName: ${values.mkString(", ")}")
+}
