@@ -202,3 +202,32 @@ println("Distinct Values Per Column:")
 distinctValuesPerColumn.foreach { case (colName, values) =>
     println(s"$colName: ${values.mkString(", ")}")
 }
+
+========
+
+import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.functions.col
+
+val partitionColumns = Array("col1", "col2", "col3") // Replace with your actual column names
+val source_df: DataFrame = // Your source DataFrame
+val databaseName = "yourDatabase" // Replace with your actual database name
+val tableName = "yourTable"       // Replace with your actual table name
+
+// Function to get distinct values as a string for the IN clause
+def getDistinctValuesForInClause(df: DataFrame, columnName: String): String = {
+    df.select(col(columnName)).distinct().collect()
+      .map(row => s"'${row.getAs[String](columnName)}'")
+      .mkString(", ")
+}
+
+// Form the WHERE part of the query for each column
+val whereConditions = partitionColumns.map(colName => {
+    val distinctValues = getDistinctValuesForInClause(source_df, colName)
+    s"$colName IN ($distinctValues)"
+}).mkString(" WHERE ", " AND ", "")
+
+// Combine SELECT and WHERE to form the complete SQL query
+val completeSqlQuery = s"SELECT ${partitionColumns.mkString(", ")} FROM $databaseName.$tableName$whereConditions"
+
+// Example: Print the complete SQL query
+println(completeSqlQuery)
