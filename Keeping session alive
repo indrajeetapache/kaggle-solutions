@@ -231,3 +231,16 @@ val completeSqlQuery = if (whereConditions.trim.isEmpty) {
 }
 
 println(completeSqlQuery)
+
+=======
+// List of column names to check, converted to lower case and trimmed
+val columnsToCheck = List("audit_file_name", "audit_run_id").map(_.trim.toLowerCase)
+
+// Function to check if all columns in the list are present in the DataFrame (case-insensitive and whitespace-insensitive)
+def areAllColumnsPresentCaseAndWhitespaceInsensitive(df: DataFrame, columns: List[String]): Boolean = {
+  val formattedDfColumns = df.columns.map(_.trim.toLowerCase).toSet
+  columns.forall(formattedDfColumns.contains)
+}
+
+// Validate the presence of all columns (case-insensitive and whitespace-insensitive)
+val areAllPresent = areAllColumnsPresentCaseAndWhitespaceInsensitive(source_df, columnsToCheck)
