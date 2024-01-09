@@ -244,3 +244,58 @@ def areAllColumnsPresentCaseAndWhitespaceInsensitive(df: DataFrame, columns: Lis
 
 // Validate the presence of all columns (case-insensitive and whitespace-insensitive)
 val areAllPresent = areAllColumnsPresentCaseAndWhitespaceInsensitive(source_df, columnsToCheck)
+===============
+To enhance the code so that it correctly formats integer and string values in the `IN` clause (i.e., adding quotes only for string values), you can add a check to determine the data type of each value. This involves inspecting each value and deciding whether to surround it with quotes based on whether it's a numeric or non-numeric value.
+
+Here's how to modify the `getDistinctValuesForInClause` function for this purpose:
+
+### Scala Code with Data Type Check for IN Clause:
+
+```scala
+import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.functions.col
+
+val partitionColumns = Array("col1", "col2", "col3") // Replace with your actual column names
+val source_df: DataFrame = // Your source DataFrame
+val databaseName = "yourDatabase" // Replace with your actual database name
+val tableName = "yourTable"       // Replace with your actual table name
+
+def formatValueForSql(value: Any): String = {
+  value match {
+    case _: Int | _: Long | _: Float | _: Double => value.toString
+    case _ => s"'$value'"
+  }
+}
+
+def getDistinctValuesForInClause(df: DataFrame, columnName: String): String = {
+    val distinctValues = df.select(col(columnName)).distinct().collect()
+    if (distinctValues.isEmpty) ""
+    else distinctValues.map(row => formatValueForSql(row(0))).mkString(", ")
+}
+
+val whereConditions = partitionColumns.flatMap(colName => {
+    val distinctValues = getDistinctValuesForInClause(source_df, colName)
+    if (distinctValues.nonEmpty) Some(s"$colName IN ($distinctValues)") else None
+}).mkString(" WHERE ", " AND ", "")
+
+val completeSqlQuery = if (whereConditions.trim.isEmpty) {
+    s"SELECT ${partitionColumns.mkString(", ")} FROM $databaseName.$tableName"
+} else {
+    s"SELECT ${partitionColumns.mkString(", ")} FROM $databaseName.$tableName$whereConditions"
+}
+
+println(completeSqlQuery)
+```
+
+### Explanation:
+
+- `formatValueForSql` function:
+  - This function takes a value and checks its data type.
+  - If the value is an integer, long, float, or double, it converts the value to a string without quotes.
+  - For other data types (like strings), it encloses the value in single quotes.
+
+- In the `getDistinctValuesForInClause` function:
+  - `formatValueForSql` is used to appropriately format each distinct value based on its data type.
+  - This ensures that numeric values are not enclosed in quotes, while string values are.
+
+This modification will result in the correct formatting of values in the SQL `IN` clause, depending on whether they are numeric or string types. It adds more sophistication to the query generation process, ensuring compatibility with various data types.
