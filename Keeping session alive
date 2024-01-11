@@ -14,6 +14,17 @@ def getPartitionColumns(spark: SparkSession, tableName: String): Seq[String] = {
     case None => 
       Array[String]() // Return an empty array if the table is not partitioned
   }
+====
+partitionPattern.findFirstMatchIn(createTableDDL) match {
+  case Some(matched) => 
+    val partitionPart = matched.group(1)
+    // Extracting column names and removing backticks
+    partitionPart.split(",").map(_.trim.replaceAll("`", "").split("\\s+")(0))
+  case None => 
+    Array[String]() // Return an empty array if the table is not partitioned
+}
+modified 
+====
 }
 
 // Usage
