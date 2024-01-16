@@ -255,6 +255,12 @@ def areAllColumnsPresentCaseAndWhitespaceInsensitive(df: DataFrame, columns: Lis
 
 // Validate the presence of all columns (case-insensitive and whitespace-insensitive)
 val areAllPresent = areAllColumnsPresentCaseAndWhitespaceInsensitive(source_df, columnsToCheck)
+====
+
+val partitionColumns = Array("col1", "col2", "col3") // Original array
+
+// Filter the array to exclude "col3"
+val modifiedPartitionColumns = partitionColumns.filter(_ != "col3")
 ===============
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.functions.col
