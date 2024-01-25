@@ -1,31 +1,4 @@
-#!/bin/bash
 
-# Assuming your original filename is something like 'datafile.csv'
-original_filename="datafile"
-env="prod"
-hdp="hdp"
-timestamp=$(date +%Y%m%d%H%M%S) # Generates a timestamp
-
-# Create a trigger file with the timestamp
-touch "${original_filename}.done.${env}.${timestamp}.${hdp}"
-
-
-===
-#!/bin/bash
-
-# Your base file and environment settings
-original_filename="datafile"
-env="prod"
-hdp="hdp"
-trigger_filename="${original_filename}.done.${env}.${hdp}"
-
-# Generate metadata
-timestamp=$(date +%Y%m%d%H%M%S)
-file_hash=$(sha256sum "${original_filename}" | cut -d' ' -f1)
-
-# Write metadata to the trigger file
-echo "Timestamp: $timestamp" > "$trigger_filename"
-echo "File Hash: $file_hash" >> "$trigger_filename"
 
 
 
