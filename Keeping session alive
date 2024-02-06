@@ -1,27 +1,27 @@
 import java.security.MessageDigest
+import org.apache.spark.input.PortableDataStream
 
-// Define a function to compute the MD5 hash of a file's contents
-def computeMD5(pds: org.apache.spark.input.PortableDataStream): String = {
+// Assuming spark-shell, SparkContext is available as 'sc'
+val hdfsPath = "hdfs://path/to/your/files" // Update this path
+
+// Define the computeMD5 function correctly within the same scope
+def computeMD5(pds: PortableDataStream): String = {
   val md = MessageDigest.getInstance("MD5")
   val buffer = new Array[Byte](1024)
-  var read = pds.open().read(buffer)
-  while (read != -1) {
-    md.update(buffer, 0, read)
-    read = pds.open().read(buffer)
+  val inStream = pds.open()
+  try {
+    var read = inStream.read(buffer)
+    while (read != -1) {
+      md.update(buffer, 0, read)
+      read = inStream.read(buffer)
+    }
+    md.digest().map("%02x".format(_)).mkString
+  } finally {
+    inStream.close()
   }
-  pds.close()
-  // Convert the byte array to a HEX string
-  md.digest().map("%02x".format(_)).mkString
 }
 
-// Specify the path to your files in HDFS
-val hdfsPath = "hdfs://path/to/your/files" // Update this with your actual HDFS path
-
-// Read files from HDFS, compute MD5 hash for each, and collect the hashes
-val fileHashes = sc.binaryFiles(hdfsPath).mapValues(computeMD5).collect()
-
-// Concatenate all the hashes and compute a master hash
-val concatenatedHashes = fileHashes.map(_._2).mkString
-val masterHash = MessageDigest.getInstance("MD5").digest(concatenatedHashes.getBytes).map("%02x".format(_)).mkString
-
-println(s"Master Hash: $masterHash")
+// Use sc.binaryFiles to read files and compute MD5 hashes
+val fileHashes = sc.binaryFiles(hdfsPath)
+                   .map { case (path, pds) => (path, computeMD5(pds)) }
+                   .collect()
