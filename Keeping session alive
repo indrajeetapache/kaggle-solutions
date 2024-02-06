@@ -8,17 +8,17 @@ object CompactComputeHashes {
     val sc = spark.sparkContext
     val hdfsPath = "hdfs://path/to/your/files" // Update this path
 
-    // Implicit class to convert PortableDataStream to Array[Byte]
-    implicit class RichPortableDataStream(val pds: PortableDataStream) extends AnyVal {
-      def toArray: Array[Byte] = {
-        val inStream = pds.open()
-        try {
-          Stream.continually(inStream.read).takeWhile(_ != -1).map(_.toByte).toArray
-        } finally {
-          inStream.close()
-        }
-      }
+    implicit class RichPortableDataStream(val pds: org.apache.spark.input.PortableDataStream) extends AnyVal {
+  def toArray: Array[Byte] = {
+    val inStream = pds.open()
+    try {
+      Stream.continually(inStream.read).takeWhile(_ != -1).map(_.toByte).toArray
+    } finally {
+      inStream.close()
     }
+  }
+}
+
 
     // Function to compute MD5 hash from a PortableDataStream
     def computeMD5(pds: PortableDataStream): String = {
