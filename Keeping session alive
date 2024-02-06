@@ -22,6 +22,8 @@ def computeMD5(pds: PortableDataStream): String = {
 }
 
 // Use sc.binaryFiles to read files and compute MD5 hashes
+// Use 'map' with explicit types for path and pds
 val fileHashes = sc.binaryFiles(hdfsPath)
-                   .map { case (path, pds) => (path, computeMD5(pds)) }
-                   .collect()
+                   .map { case (path: String, pds: PortableDataStream) =>
+                     (path, computeMD5(pds))
+                   }.collect()
