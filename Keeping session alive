@@ -1,20 +1,38 @@
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.count
 
-val spark: SparkSession = // Initialize your Spark session
+val spark: SparkSession = SparkSession.builder()
+  .appName("Check Duplicate Columns")
+  .getOrCreate()
 
-// Assuming these are your initial arrays
-val array1: Array[String] = Array("A", "B", "C", "D")
-val array2: Array[String] = Array("B", "D")
+// Sample DataFrame and column arrays
+val df = spark.createDataFrame(Seq(
+  ("value1", "value2", "value3"),
+  ("value4", "value5", "value6"),
+  ("value1", "value7", "value8"),
+  ("value9", "value2", "value3")
+)).toDF("ColumnA", "ColumnB", "ColumnC")
+
+val array1: Array[String] = Array("ColumnA", "ColumnB", "ColumnC")
+val array2: Array[String] = Array("ColumnB") // Example of columns to exclude
+
+// Calculate the difference between the two arrays to determine which columns to check for duplicates
 val resultArray = array1.diff(array2)
 
-// Assuming df is your DataFrame
-val df: DataFrame = // Your DataFrame
-val selectedDf = df.select(resultArray.head, resultArray.tail: _*)
+// Function to check for duplicate values in each specified column and display them
+def checkAndDisplayDuplicates(df: org.apache.spark.sql.DataFrame, columns: Array[String]): Unit = {
+  columns.foreach { colName =>
+    val duplicates = df.groupBy(colName)
+      .agg(count(colName).alias("count"))
+      .filter($"count" > 1)
+      .drop("count")
+    
+    println(s"Duplicates in $colName:")
+    duplicates.show()
+  }
+}
 
-val columnName = "YourColumnName"
-val duplicates = selectedDf.groupBy(columnName)
-  .agg(count(columnName).alias("count"))
-  .filter($"count" > 1)
+// Calling the function with the DataFrame and the resultArray
+checkAndDisplayDuplicates(df, resultArray)
 
-duplicates.show()
+spark.stop()
