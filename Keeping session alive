@@ -1,29 +1,20 @@
-import java.security.MessageDigest
-import org.apache.spark.input.PortableDataStream
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.count
 
-// Assuming spark-shell, SparkContext is available as 'sc'
-val hdfsPath = "hdfs://path/to/your/files" // Update this path
+val spark: SparkSession = // Initialize your Spark session
 
-// Define the computeMD5 function correctly within the same scope
-def computeMD5(pds: PortableDataStream): String = {
-  val md = MessageDigest.getInstance("MD5")
-  val buffer = new Array[Byte](1024)
-  val inStream = pds.open()
-  try {
-    var read = inStream.read(buffer)
-    while (read != -1) {
-      md.update(buffer, 0, read)
-      read = inStream.read(buffer)
-    }
-    md.digest().map("%02x".format(_)).mkString
-  } finally {
-    inStream.close()
-  }
-}
+// Assuming these are your initial arrays
+val array1: Array[String] = Array("A", "B", "C", "D")
+val array2: Array[String] = Array("B", "D")
+val resultArray = array1.diff(array2)
 
-// Use sc.binaryFiles to read files and compute MD5 hashes
-// Use 'map' with explicit types for path and pds
-val fileHashes = sc.binaryFiles(hdfsPath)
-                   .map { case (path: String, pds: PortableDataStream) =>
-                     (path, computeMD5(pds))
-                   }.collect()
+// Assuming df is your DataFrame
+val df: DataFrame = // Your DataFrame
+val selectedDf = df.select(resultArray.head, resultArray.tail: _*)
+
+val columnName = "YourColumnName"
+val duplicates = selectedDf.groupBy(columnName)
+  .agg(count(columnName).alias("count"))
+  .filter($"count" > 1)
+
+duplicates.show()
