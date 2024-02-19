@@ -5,13 +5,18 @@ def isValidDate(value: String, format: String): Boolean = {
   try {
     format match {
       case "yyyy" =>
-        Year.parse(value, DateTimeFormatter.ofPattern(format))
-      case "yyyyMM" | "MMyyyy" =>
-        YearMonth.parse(value, DateTimeFormatter.ofPattern(format))
+        val year = Year.parse(value, DateTimeFormatter.ofPattern(format))
+        year.getValue >= 1900 && year.getValue <= 2099 // Check the range of the year
+      case "yyyyMM" =>
+        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern(format))
+        yearMonth.getYear >= 1900 && yearMonth.getYear <= 2099 // Check the range of the year
+      case "MMyyyy" =>
+        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern("yyyyMM").withResolverStyle(ResolverStyle.STRICT))
+        yearMonth.getYear >= 1900 && yearMonth.getYear <= 2099 // Check the range of the year
       case _ =>
         LocalDate.parse(value, DateTimeFormatter.ofPattern(format))
+        true // For full dates, we assume the year range is valid
     }
-    true // If parsing is successful, return true
   } catch {
     case _: DateTimeParseException => false // If parsing fails, return false
   }
