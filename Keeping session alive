@@ -11,7 +11,8 @@ def isValidDate(value: String, format: String): Boolean = {
         val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern(format))
         yearMonth.getYear >= 1900 && yearMonth.getYear <= 2099 // Check the range of the year
       case "MMyyyy" =>
-        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern("yyyyMM").withResolverStyle(ResolverStyle.STRICT))
+        // Assuming the format for MMyyyy is provided correctly, e.g., "122024" for December 2024
+        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern(format))
         yearMonth.getYear >= 1900 && yearMonth.getYear <= 2099 // Check the range of the year
       case _ =>
         LocalDate.parse(value, DateTimeFormatter.ofPattern(format))
