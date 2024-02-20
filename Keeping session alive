@@ -6,20 +6,21 @@ def isValidDate(value: String, format: String): Boolean = {
     val currentYear = Year.now().getValue // Get the current year
     val formatter = DateTimeFormatter.ofPattern(format)
 
-    if (format.contains("yyyy") && format.length <= 7) { // Checks for "yyyy" and length to differentiate from full date formats
-      val yearMonth = YearMonth.parse(value, formatter)
-      yearMonth.getYear >= 1900 && yearMonth.getYear <= currentYear
-    } else if (format == "yyyy") {
-      val year = Year.parse(value, formatter)
-      year.getValue >= 1900 && year.getValue <= currentYear
-    } else {
-      // This will handle full dates, but won't be reached for year-month combinations due to the first condition
-      YearMonth.parse(value, formatter) // Just try to parse, it will throw an exception if it doesn't match
-      true
+    format match {
+      case "yyyy" =>
+        val year = Year.parse(value, formatter)
+        year.getValue >= 1900 && year.getValue <= currentYear
+      case _ if format.contains("yyyy") =>
+        val yearMonth = YearMonth.parse(value, formatter)
+        yearMonth.getYear >= 1900 && yearMonth.getYear <= currentYear
+      case _ =>
+        LocalDate.parse(value, formatter)
+        true // For full dates, we assume the year range is valid if parsing succeeds
     }
   } catch {
     case _: DateTimeParseException => false // If parsing fails, return false
   }
 }
+
 val result = isValidDate("2024", "yyyy")
 println(result) // Should print 'true' if the current year is 2024 or later
