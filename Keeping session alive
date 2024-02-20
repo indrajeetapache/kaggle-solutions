@@ -21,3 +21,5 @@ def isValidDate(value: String, format: String): Boolean = {
     case _: DateTimeParseException => false // If parsing fails, return false
   }
 }
+val result = isValidDate("2024", "yyyy")
+println(result) // Should print 'true' if the current year is 2024 or later
