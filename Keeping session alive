@@ -3,20 +3,24 @@ import java.time.{LocalDate, Year, YearMonth}
 
 def isValidDate(value: String, format: String): Boolean = {
   try {
-    format match {
+    val currentYear = Year.now().getValue // Get the current year
+
+    format.replace("-", "").replace("/", "") match {
       case "yyyy" =>
-        val year = Year.parse(value, DateTimeFormatter.ofPattern(format))
-        year.getValue >= 1900 && year.getValue <= 2099 // Check the range of the year
-      case "yyyyMM" =>
-        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern(format))
-        yearMonth.getYear >= 1900 && yearMonth.getYear <= 2099 // Check the range of the year
-      case "MMyyyy" =>
-        // Assuming the format for MMyyyy is provided correctly, e.g., "122024" for December 2024
-        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern(format))
-        yearMonth.getYear >= 1900 && yearMonth.getYear <= 2099 // Check the range of the year
+        val year = Year.parse(value, DateTimeFormatter.ofPattern("yyyy"))
+        year.getValue >= 1900 && year.getValue <= currentYear
+      case "yyyyMM" | "MMyyyy" =>
+        val yearMonth = YearMonth.parse(value, DateTimeFormatter.ofPattern(format.replace("-", "").replace("/", "")))
+        yearMonth.getYear >= 1900 && yearMonth.getYear <= currentYear
+      case "yyyyMM" | "MMyyyy" | "yyyy-MM" | "MM-yyyy" | "yyyy/MM" | "MM/yyyy" =>
+        // Parse to YearMonth using the format without separators for consistency
+        val formatter = DateTimeFormatter.ofPattern("yyyyMM")
+        val yearMonth = YearMonth.parse(value.replace("-", "").replace("/", ""), formatter)
+        yearMonth.getYear >= 1900 && yearMonth.getYear <= currentYear
       case _ =>
+        // Attempt to parse as a LocalDate for any other formats
         LocalDate.parse(value, DateTimeFormatter.ofPattern(format))
-        true // For full dates, we assume the year range is valid
+        true // For full dates, we assume the year range is valid if parsing succeeds
     }
   } catch {
     case _: DateTimeParseException => false // If parsing fails, return false
