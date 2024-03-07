@@ -5,3 +5,11 @@ SELECT SUM(
   EXTRACT(SECOND FROM (end_time - start_time)) / 60
 ) AS total_time_diff_in_min
 FROM build_hist_dt;
+
+SELECT 
+  (EXTRACT(DAY FROM (END_TS - START_TS)) * 86400) + 
+  (EXTRACT(HOUR FROM (END_TS - START_TS)) * 3600) + 
+  (EXTRACT(MINUTE FROM (END_TS - START_TS)) * 60) + 
+  EXTRACT(SECOND FROM (END_TS - START_TS)) AS time_diff_in_seconds
+FROM 
+  your_table_name;
