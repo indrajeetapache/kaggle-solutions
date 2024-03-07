@@ -1,1 +1,7 @@
-
+SELECT SUM(
+  EXTRACT(DAY FROM (end_time - start_time)) * 24 * 60 + 
+  EXTRACT(HOUR FROM (end_time - start_time)) * 60 + 
+  EXTRACT(MINUTE FROM (end_time - start_time)) +
+  EXTRACT(SECOND FROM (end_time - start_time)) / 60
+) AS total_time_diff_in_min
+FROM build_hist_dt;
