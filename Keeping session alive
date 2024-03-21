@@ -1,1 +1,49 @@
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.{StructType, StructField, StringType}
+import scala.util.Try
+import java.nio.file.Paths
+
+val spark = SparkSession.builder.appName("Read Header Trailer with Filename").getOrCreate()
+
+// User input flags
+val readHeader = true // Set to true or false based on user input
+val readTrailer = true // Set to true or false based on user input
+
+// Define the schema for the DataFrame
+val schema = StructType(Array(
+  StructField("line", StringType, true),
+  StructField("file_name", StringType, true)
+))
+
+// Function to extract just the filename from the path
+def getFileName(path: String): String = Paths.get(path).getFileName.toString
+
+// Function to read header and/or trailer from a single file
+def readHeaderTrailer(path: String): DataFrame = {
+  val rdd = spark.sparkContext.textFile(path)
+  
+  val header = if (readHeader) Try(rdd.first()).toOption else None
+  val trailer = if (readTrailer) Try(rdd.takeOrdered(1)(Ordering.String.reverse).head).toOption else None
+  
+  val headerTrailerSeq = Seq(header, trailer).flatten // This will create a Seq[String] with only the present elements
+  val filename = getFileName(path) // Get just the filename
+  val headerTrailerWithFilename = headerTrailerSeq.map(line => Row(line, filename)) // Add filename to each line
+  
+  spark.createDataFrame(spark.sparkContext.parallelize(headerTrailerWithFilename), schema)
+}
+
+// If you have multiple files and want to apply this to all files
+val paths = Array("path_to_your_file_1.txt", "path_to_your_file_2.txt", "path_to_your_file_n.txt") // replace with actual paths
+val headerTrailerDFs = paths.map(readHeaderTrailer)
+
+// Combine all DataFrames into one
+val combinedDF = headerTrailerDFs.reduce(_ union _)
+
+// Show the result or process further as needed
+combinedDF.show(false)
+
+// Stop the Spark session
+spark.stop()
 
