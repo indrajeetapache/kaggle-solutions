@@ -2,37 +2,36 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.{StructType, StructField, StringType}
+import scala.util.Try
 
-val spark = SparkSession.builder.appName("Read Header Trailer with FileName").getOrCreate()
+val spark = SparkSession.builder.appName("Read Header Trailer with Filename").getOrCreate()
 
 // User input flags
 val readHeader = true // Set to true or false based on user input
 val readTrailer = true // Set to true or false based on user input
 
-// Function to read header and/or trailer from a single file and add file name
-def readHeaderTrailerWithFileName(path: String): DataFrame = {
-  val rdd = spark.sparkContext.textFile(path)
+// Define the schema for the DataFrame
+val schema = StructType(Array(
+  StructField("line", StringType, true),
+  StructField("file_name", StringType, true)
+))
 
-  val fileName = path.split("/").last // Assuming the path format allows this
+// Function to read header and/or trailer from a single file
+def readHeaderTrailer(path: String): DataFrame = {
+  val rdd = spark.sparkContext.textFile(path)
   
-  val header = if (readHeader) Some((fileName, rdd.first())) else None
-  val trailer = if (readTrailer) Some((fileName, rdd.takeOrdered(1)(Ordering.String.reverse).head)) else None
+  val header = if (readHeader) Try(rdd.first()).toOption else None
+  val trailer = if (readTrailer) Try(rdd.takeOrdered(1)(Ordering.String.reverse).head).toOption else None
   
-  val headerTrailerSeq = Seq(header, trailer).flatten // This will create a Seq[(String, String)] with only the present elements
-  val headerTrailerRDD = spark.sparkContext.parallelize(headerTrailerSeq)
+  val headerTrailerSeq = Seq(header, trailer).flatten // This will create a Seq[String] with only the present elements
+  val headerTrailerWithFilename = headerTrailerSeq.map(line => Row(line, path)) // Add filename to each line
   
-  // Define the schema for the DataFrame
-  val schema = new StructType()
-    .add(StructField("file_name", StringType, true))
-    .add(StructField("value", StringType, true))
-  
-  // Convert the RDD of tuples to a DataFrame using the schema
-  spark.createDataFrame(headerTrailerRDD.map(Row.fromTuple), schema)
+  spark.createDataFrame(spark.sparkContext.parallelize(headerTrailerWithFilename), schema)
 }
 
 // If you have multiple files and want to apply this to all files
 val paths = Array("path_to_your_file_1.txt", "path_to_your_file_2.txt", "path_to_your_file_n.txt") // replace with actual paths
-val headerTrailerDFs = paths.map(readHeaderTrailerWithFileName)
+val headerTrailerDFs = paths.map(readHeaderTrailer)
 
 // Combine all DataFrames into one
 val combinedDF = headerTrailerDFs.reduce(_ union _)
@@ -41,4 +40,4 @@ val combinedDF = headerTrailerDFs.reduce(_ union _)
 combinedDF.show(false)
 
 // Stop the Spark session
-spark.stop()
+spark
