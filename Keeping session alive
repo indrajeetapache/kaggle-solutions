@@ -1,12 +1,1 @@
-We've been encountering concurrency issues in our Spark jobs, particularly when attempting dynamic partition overwrites in Hive tables, as detailed in JIRA ticket SPARK-28945. A direct modification of the FileOutputCommitter class could address this but poses significant risks and is generally not advisable.
 
-To mitigate this, we propose setting unique staging directories per job via spark.sql.warehouse.dir and hive.exec.stagingdir, isolating intermediate data and preventing conflicts. This approach, inspired by insights from our research, requires thorough validation to ensure seamless integration into our data workflows.
-
-val spark = SparkSession.builder()
-  .appName("Your Spark Application Name")
-  .config("spark.sql.warehouse.dir", "/path/to/custom/warehouse")
-  .config("hive.exec.stagingdir", "/path/to/custom/stagingdir")
-  .enableHiveSupport()
-
-spark.conf.set("hive.exec.stagingdir", customStagingDir)
-spark.conf.set("spark.sql.warehouse.dir", customStagingDir)
