@@ -1,25 +1,12 @@
-SELECT SUM(
-  EXTRACT(DAY FROM (end_time - start_time)) * 24 * 60 + 
-  EXTRACT(HOUR FROM (end_time - start_time)) * 60 + 
-  EXTRACT(MINUTE FROM (end_time - start_time)) +
-  EXTRACT(SECOND FROM (end_time - start_time)) / 60
-) AS total_time_diff_in_min
-FROM build_hist_dt;
+We've been encountering concurrency issues in our Spark jobs, particularly when attempting dynamic partition overwrites in Hive tables, as detailed in JIRA ticket SPARK-28945. A direct modification of the FileOutputCommitter class could address this but poses significant risks and is generally not advisable.
 
-SELECT 
-  (EXTRACT(DAY FROM (END_TS - START_TS)) * 86400) + 
-  (EXTRACT(HOUR FROM (END_TS - START_TS)) * 3600) + 
-  (EXTRACT(MINUTE FROM (END_TS - START_TS)) * 60) + 
-  EXTRACT(SECOND FROM (END_TS - START_TS)) AS time_diff_in_seconds
-FROM 
-  your_table_name;
+To mitigate this, we propose setting unique staging directories per job via spark.sql.warehouse.dir and hive.exec.stagingdir, isolating intermediate data and preventing conflicts. This approach, inspired by insights from our research, requires thorough validation to ensure seamless integration into our data workflows.
 
-SELECT 
-  SUM(
-    (EXTRACT(DAY FROM (END_TS - START_TS)) * 86400) + 
-    (EXTRACT(HOUR FROM (END_TS - START_TS)) * 3600) + 
-    (EXTRACT(MINUTE FROM (END_TS - START_TS)) * 60) + 
-    EXTRACT(SECOND FROM (END_TS - START_TS))
-  ) AS total_time_diff_in_seconds
-FROM 
-  your_table_name;
+val spark = SparkSession.builder()
+  .appName("Your Spark Application Name")
+  .config("spark.sql.warehouse.dir", "/path/to/custom/warehouse")
+  .config("hive.exec.stagingdir", "/path/to/custom/stagingdir")
+  .enableHiveSupport()
+
+spark.conf.set("hive.exec.stagingdir", customStagingDir)
+spark.conf.set("spark.sql.warehouse.dir", customStagingDir)
