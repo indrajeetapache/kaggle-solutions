@@ -12,10 +12,11 @@ def readHeaderTrailer(path: String): DataFrame = {
   val rdd = spark.sparkContext.textFile(path)
   
   val header = if (readHeader) Some(rdd.first()) else None
-  val trailer = if (readTrailer) Some(rdd.takeOrdered(1)(Ordering.String.reverse)) else None
+  val trailer = if (readTrailer) Some(rdd.takeOrdered(1)(Ordering.String.reverse).head) else None
   
-  val headerTrailerRDD = spark.sparkContext.parallelize(header ++ trailer)
-  spark.createDataFrame(headerTrailerRDD.map(Tuple1.apply))
+  val headerTrailerSeq = Seq(header, trailer).flatten // This will create a Seq[String] with only the present elements
+  val headerTrailerRDD = spark.sparkContext.parallelize(headerTrailerSeq)
+  spark.createDataFrame(headerTrailerRDD.map(Tuple1.apply)).toDF("value")
 }
 
 // If you have multiple files and want to apply this to all files
@@ -30,4 +31,5 @@ combinedDF.show(false)
 
 // Stop the Spark session
 spark.stop()
+
 
