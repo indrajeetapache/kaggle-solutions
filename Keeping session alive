@@ -1,5 +1,61 @@
---conf spark.sql.sources.partitionOverwriteMode=dynamic \
-  --conf spark.sql.dynamicPartition.enabled=true \
-  --conf spark.sql.dynamicPartition.maxPartitions=10000 \
-  --conf spark.hadoop.hive.exec.dynamic.partition=true \
-  --conf spark.hadoop.hive.exec.dynamic.partition.mode=nonstrict \
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.spark.sql.SparkSession
+import java.util.concurrent.TimeUnit
+
+object SparkJobLockManagement {
+  def main(args: Array[String]): Unit = {
+    val spark = SparkSession.builder()
+      .appName("Spark Job with Lock Management")
+      .getOrCreate()
+
+    val hdfsConf = new Configuration()
+    val hdfs = FileSystem.get(hdfsConf)
+    val lockFilePath = new Path("/user/hive/warehouse/mydatabase/mytable/_ingestion.lock")
+
+    // Function to create a lock file
+    def createLockFile(): Unit = {
+      if (!hdfs.exists(lockFilePath)) {
+        hdfs.createNewFile(lockFilePath)
+        println("Lock file created.")
+      }
+    }
+
+    // Function to remove lock file
+    def removeLockFile(): Unit = {
+      if (hdfs.exists(lockFilePath)) {
+        hdfs.delete(lockFilePath, false)
+        println("Lock file removed.")
+      }
+    }
+
+    // Function to check for the existence of the lock file
+    def lockFileExists(): Boolean = hdfs.exists(lockFilePath)
+
+    // Example: Creating the lock at the beginning of an ingestion job
+    createLockFile()
+
+    // -------------------------
+    // Ingestion job logic here
+    // -------------------------
+
+    // Example: Removing the lock file upon successful completion of the ingestion job
+    removeLockFile()
+
+    // Example: Waiting for the lock file to be removed before starting subsequent processing
+    // This would typically be in a separate job or later in the same job depending on your workflow
+    while (lockFileExists()) {
+      println("Waiting for ingestion job to complete...")
+      TimeUnit.MINUTES.sleep(5) // Check every 5 minutes
+    }
+
+    println("Ingestion job completed. Proceeding with the subsequent job.")
+
+    // ----------------------------------------------------
+    // Proceed with the subsequent job's logic after here
+    // ----------------------------------------------------
+
+    // Remember to close the Spark session at the end of your application
+    spark.stop()
+  }
+}
