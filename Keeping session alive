@@ -59,3 +59,8 @@ object SparkJobLockManagement {
     spark.stop()
   }
 }
+====// Extract the table's location (HDFS path) from the DataFrame
+val locationRow = describeTableDF
+  .filter($"col_name" === "Location")
+  .select("data_type")
+  .first()
