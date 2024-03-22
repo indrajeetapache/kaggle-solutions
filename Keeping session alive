@@ -11,54 +11,57 @@ object SparkJobLockManagement {
 
     val hdfsConf = new Configuration()
     val hdfs = FileSystem.get(hdfsConf)
-    val lockFilePath = new Path("/user/hive/warehouse/mydatabase/mytable/_ingestion.lock")
 
-    // Function to create a lock file
-    def createLockFile(): Unit = {
-      if (!hdfs.exists(lockFilePath)) {
-        hdfs.createNewFile(lockFilePath)
-        println("Lock file created.")
-      }
-    }
+    // Formatting today's date to include in the lock file name
+    import java.time.LocalDate
+    import java.time.format.DateTimeFormatter
 
-    // Function to remove lock file
-    def removeLockFile(): Unit = {
-      if (hdfs.exists(lockFilePath)) {
-        hdfs.delete(lockFilePath, false)
-        println("Lock file removed.")
-      }
-    }
+    val formatter = DateTimeFormatter.ofPattern("yyyyMMdd")
+    val todayFormatted = LocalDate.now().format(formatter)
+    val lockFilePath = new Path(s"hdfs:///user/hive/warehouse/mydatabase/mytable/_ingestion_$todayFormatted.lock")
 
     // Function to check for the existence of the lock file
     def lockFileExists(): Boolean = hdfs.exists(lockFilePath)
 
-    // Example: Creating the lock at the beginning of an ingestion job
-    createLockFile()
-
-    // -------------------------
-    // Ingestion job logic here
-    // -------------------------
-
-    // Example: Removing the lock file upon successful completion of the ingestion job
-    removeLockFile()
-
-    // Example: Waiting for the lock file to be removed before starting subsequent processing
-    // This would typically be in a separate job or later in the same job depending on your workflow
-    while (lockFileExists()) {
-      println("Waiting for ingestion job to complete...")
-      TimeUnit.MINUTES.sleep(5) // Check every 5 minutes
+    // Function to wait for the lock file to be removed
+    def waitForLockToClear(): Boolean = {
+      while (lockFileExists()) {
+        println(s"Lock file $lockFilePath exists. Waiting for ingestion job to complete...")
+        TimeUnit.MINUTES.sleep(5) // Check every 5 minutes
+      }
+      true // Return true once the lock file no longer exists
     }
 
-    println("Ingestion job completed. Proceeding with the subsequent job.")
+    // Wait for any existing lock to clear before proceeding
+    if (waitForLockToClear()) {
+      // Create a lock file to signify the start of this job's processing
+      def createLockFile(): Unit = {
+        hdfs.createNewFile(lockFilePath)
+        println(s"Lock file $lockFilePath created.")
+      }
 
-    // ----------------------------------------------------
-    // Proceed with the subsequent job's logic after here
-    // ----------------------------------------------------
+      // Logic for your job's processing
+      // -----------------------------------------
+      // Insert your data processing logic here
+      // -----------------------------------------
 
-    // Remember to close the Spark session at the end of your application
+      // Function to remove the lock file after processing is complete
+      def removeLockFile(): Unit = {
+        if (hdfs.exists(lockFilePath)) {
+          hdfs.delete(lockFilePath, false)
+          println(s"Lock file $lockFilePath removed.")
+        }
+      }
+
+      // Remove the lock file upon successful completion of the job
+      removeLockFile()
+    }
+
+    // Close the Spark session at the end of your application
     spark.stop()
   }
 }
+
 ====// Extract the table's location (HDFS path) from the DataFrame
 val locationRow = describeTableDF
   .filter($"col_name" === "Location")
