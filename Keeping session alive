@@ -1,1 +1,9 @@
+#!/bin/bash
+
+# Generate a unique ID by combining a timestamp, the process ID, and a single digit.
+# Format the date as YYYYMM%d%H%M%S for appending.
+# Use $RANDOM and modulo operator to ensure a single digit.
+
+unique_id=$(date +%Y%m%d%H%M%S)_$$_$((RANDOM % 10))
+echo "Unique ID with today's date and time: $unique_id"
 
