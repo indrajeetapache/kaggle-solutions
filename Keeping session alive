@@ -129,3 +129,39 @@ val userDefinedControlDF = createUserDefinedControlDataFrame(combinedDF, userExp
 
 // You can now use `userDefinedControlDF` to perform your control validations
 // against `originalDF` or any other validation logic required.
+========
+
+import org.apache.spark.sql.{SparkSession, DataFrame}
+import scala.util.Try
+
+def readHeaderTrailer(path: String, readHeader: Boolean, readTrailer: Boolean)(implicit spark: SparkSession): DataFrame = {
+  val rdd = spark.sparkContext.textFile(path)
+  
+  val header = if (readHeader) Try(rdd.first()).toOption else None
+  val trailer = if (readTrailer) Try(rdd.takeOrdered(1)(Ordering.String.reverse).head).toOption else None
+  
+  val headerTrailerSeq = Seq(header, trailer).flatten
+  spark.createDataFrame(headerTrailerSeq.map(Tuple1.apply), List("value"))
+}
+
+// Implicit Spark session
+implicit val spark: SparkSession = SparkSession.builder
+  .appName("Read Header Trailer")
+  .getOrCreate()
+
+// User input flags, these could come from a configuration file or command line arguments
+val readHeader = true // Set based on user input
+val readTrailer = true // Set based on user input
+
+// Replace with actual paths and pass the flags
+val paths = Array("path_to_your_file_1.txt", "path_to_your_file_2.txt", "path_to_your_file_n.txt")
+val headerTrailerDFs = paths.map(path => readHeaderTrailer(path, readHeader, readTrailer))
+
+// Combine all DataFrames into one if necessary
+val combinedDF = headerTrailerDFs.reduce(_ union _)
+
+// Show the result or process further as needed
+combinedDF.show(false)
+
+// Stop the Spark session when you're done
+spark.stop()
