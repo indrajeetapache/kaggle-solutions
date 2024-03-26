@@ -11,6 +11,45 @@ dataProcessingConfig {
     # More expressions can be added here
   ]
 }
+===
+import org.apache.spark.sql.SparkSession
+import com.typesafe.config.ConfigFactory
+import scala.collection.JavaConverters._
+
+val spark: SparkSession = SparkSession.builder()
+  .appName("DataFrame Transformation with Configurations")
+  .getOrCreate()
+
+val conf = ConfigFactory.load()
+
+// Read Spark read options
+val sparkReadOptionsMap: Map[String, String] = conf.getConfig("dataProcessing.sparkReadOptions").entrySet().asScala.map { entry =>
+  entry.getKey -> entry.getValue.unwrapped().toString
+}.toMap
+
+// Read expressions
+val expressionsList: List[String] = conf.getStringList("dataProcessing.expressions").asScala.toList
+
+// Read a DataFrame using the spark read options map
+val filePath = "path/to/your/data.csv" // Replace with actual file path
+val df = spark.read
+  .options(sparkReadOptionsMap)
+  .csv(filePath)
+
+// Define a function to apply transformations to the DataFrame
+def applyTransformations(df: DataFrame, expressions: List[String]): DataFrame = {
+  expressions.foldLeft(df) { (dataFrame, expr) =>
+    dataFrame.withColumnRenamed(expr.split(" as ")(0).trim, expr.split(" as ")(1).trim)
+  }
+}
+
+// Apply expressions to transform the DataFrame
+val transformedDF = applyTransformations(df, expressionsList)
+
+transformedDF.show()
+
+spark.stop()
+
 ====
 
 import org.apache.spark.sql.DataFrame
