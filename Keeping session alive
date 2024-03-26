@@ -1,9 +1,92 @@
-#!/bin/bash
+dataProcessingConfig {
+  sparkReadOptions {
+    header = "true"
+    inferSchema = "true"
+    delimiter = ","
+    # Add more read options as needed
+  }
+  expressions = [
+    "split(value, ',')[0] as controlColumn1",
+    "split(value, ',')[1] as controlColumn2"
+    # More expressions can be added here
+  ]
+}
+====
 
-# Generate a unique ID by combining a timestamp, the process ID, and a single digit.
-# Format the date as YYYYMM%d%H%M%S for appending.
-# Use $RANDOM and modulo operator to ensure a single digit.
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
 
-unique_id=$(date +%Y%m%d%H%M%S)_$$_$((RANDOM % 10))
-echo "Unique ID with today's date and time: $unique_id"
+// Assuming `originalDF` is the original data you need to validate
+val originalDF: DataFrame = // Load your original data
 
+// Placeholder for user-defined column split logic based on the `value` column
+val userDefinedSplitLogic: String = "," // Example: a comma delimiter for CSV-formatted values
+
+// Function to create a user-defined DataFrame from the `value` column
+def createUserDefinedControlDataFrame(combinedDF: DataFrame, splitLogic: String): DataFrame = {
+  // Use the split logic to parse the `value` column into a DataFrame that matches the structure expected for validation
+  // This could involve splitting a string, extracting JSON fields, etc., depending on the format of `value`
+  // For simplicity, here's an example with CSV-formatted `value`
+  combinedDF.withColumn("parsed_values", split(col("value"), splitLogic))
+            .selectExpr("parsed_values[0] as controlColumn1", "parsed_values[1] as controlColumn2")
+            // Add additional columns as required
+}
+
+// Placeholder function for the validation logic
+def validateDataWithControlDataFrame(originalDF: DataFrame, controlDataFrame: DataFrame): Boolean = {
+  // Implement the validation logic here
+  // For example, comparing counts, specific values, etc.
+  true // Placeholder for the validation result (true if valid, false otherwise)
+}
+
+// Logic to determine which validation path to take
+val useUserDefinedValidation = true // This flag would be set based on whether the user provides their own control logic
+
+val controlDataFrame: DataFrame = if (useUserDefinedValidation) {
+  val headerTrailerCombinedDF: DataFrame = // Load the header/trailer combined DataFrame
+  createUserDefinedControlDataFrame(headerTrailerCombinedDF, userDefinedSplitLogic)
+} else {
+  val controlFilePath: String = "path_to_control_file.csv"
+  readControlFile(controlFilePath) // This is your existing function to read the control file
+}
+
+// Perform the validation
+val isValid = validateDataWithControlDataFrame(originalDF, controlDataFrame)
+
+// Take action based on the validation result
+if (isValid) {
+  println("Data validation passed.")
+} else {
+  println("Data validation failed.")
+  // Handle validation failure (log, throw exception, etc.)
+}
+=========
+
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.SparkSession
+
+val spark: SparkSession = // initialize your Spark session
+
+// Assuming `combinedDF` is your DataFrame with a 'value' column containing the data to parse
+
+// Placeholder for user-provided expressions
+val userExpressions: Array[String] = Array(
+  "split(value, ',')[0] as controlColumn1",
+  "split(value, ',')[1] as controlColumn2"
+  // The user could add more expressions as needed
+)
+
+// Function to create a user-defined DataFrame based on expressions
+def createUserDefinedControlDataFrame(combinedDF: DataFrame, expressions: Array[String]): DataFrame = {
+  combinedDF.selectExpr(expressions: _*)
+}
+
+// Create the user-defined DataFrame using the provided expressions
+val userDefinedControlDF = createUserDefinedControlDataFrame(combinedDF, userExpressions)
+
+// Now, `userDefinedControlDF` will have the columns 'controlColumn1', 'controlColumn2', etc.,
+// according to the expressions defined by the user.
+
+// You can now use `userDefinedControlDF` to perform your control validations
+// against `originalDF` or any other validation logic required.
