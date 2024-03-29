@@ -27,19 +27,23 @@ val transformedDF: DataFrame = expressionsMap.foldLeft(df) { (tempDF, expression
 import org.apache.spark.sql.{SparkSession, DataFrame}
 import com.typesafe.config.ConfigFactory
 
-// Initialize SparkSession
-val spark: SparkSession = SparkSession.builder()
-  .appName("DataFrame Transformation with Configurations")
-  .getOrCreate()
+import com.typesafe.config.ConfigFactory
+import scala.collection.JavaConverters._
 
-// Load the .conf file and read the hiveUserDefinedColumns configuration
 val conf = ConfigFactory.load()
-val hiveUserDefinedColumnsString: String = conf.getString("dataProcessingConfig.expressions.hiveUserDefinedColumns")
 
-// Parse the string into an array of column expressions
-val columnExpressions: Array[String] = hiveUserDefinedColumnsString.split(",")
-  .map(_.trim)
-  .filter(_.nonEmpty)
+// Get the hiveUserDefined Config object
+val hiveUserDefinedConfig = conf.getConfig("sparkReadOptions.hiveUserDefined")
+
+// Extract each entry as a key-value pair and convert it to a SQL expression
+val columnExpressions: Seq[String] = hiveUserDefinedConfig.entrySet().asScala.toSeq.map { entry =>
+  val key = entry.getKey
+  val value = hiveUserDefinedConfig.getString(key)
+  s"$key = $value"
+}
+
+// The rest of your code to apply these expressions to your DataFrame
+
 
 // Assuming df is your original DataFrame which has the 'value' column
 val df: DataFrame = // ... load your DataFrame
