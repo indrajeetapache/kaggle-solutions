@@ -5,11 +5,11 @@ dataProcessingConfig {
     delimiter = ","
     # Add more read options as needed
   }
-  expressions = [
-    "split(value, ',')[0] as controlColumn1",
-    "split(value, ',')[1] as controlColumn2"
-    # More expressions can be added here
-  ]
+expressions = {
+    controlColumn1 = "split(value, ',')[0]"
+    controlColumn2 = "split(value, ',')[1]"
+    # Add more expressions as needed
+  }
 }
 ===
 import org.apache.spark.sql.SparkSession
