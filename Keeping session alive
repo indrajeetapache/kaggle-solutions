@@ -62,3 +62,6 @@ transformedDF.show()
 
 // Stop the Spark session
 spark.stop()
+
+
+df.withColumn("extractedValue", expr("regexp_extract(col1, '162648\\|(\\d+)', 1)")).show(false)
