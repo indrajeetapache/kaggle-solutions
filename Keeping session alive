@@ -69,32 +69,3 @@ df.withColumn("extractedValue", expr("regexp_extract(col1, '162648\\|\\s*(.*?)\\
 df.withColumn("thirdValue", split(col("col1"), "\\|")(2)).show(false)
 ====
 
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.{col, lit}
-import org.apache.spark.sql.types.StructType
-
-// Function to align the schema of df2 to match df
-def alignSchema(originalDf: DataFrame, targetSchema: StructType): DataFrame = {
-  val adjustedColumns = targetSchema.fields.map { field =>
-    // Check if originalDf contains the column
-    if (originalDf.columns.contains(field.name)) {
-      // Column exists, cast it to the target type
-      col(field.name).cast(field.dataType).as(field.name)
-    } else {
-      // Column does not exist, add it as null with the target type
-      lit(null).cast(field.dataType).as(field.name)
-    }
-  }
-
-  originalDf.select(adjustedColumns: _*)
-}
-
-// Assuming df is the DataFrame with the schema directly from Snowflake
-// and df2 is the DataFrame with actual data where nulls might have changed the inferred types
-val df2Aligned = alignSchema(df2, df.schema)
-
-// Now df2Aligned's schema matches df, including correct handling of nulls and data types
-// You can proceed to write df2Aligned to Snowflake
-
-
-
