@@ -1,1 +1,21 @@
-today=$(date +%Y%m%d)
+from pyspark.sql import SparkSession
+
+# Create a Spark session with MongoDB support
+spark = SparkSession \
+    .builder \
+    .appName("MongoDBIntegration") \
+    .config("spark.mongodb.input.uri", "mongodb://<username>:<password>@<host>:<port>/<database>?authSource=admin") \
+    .config("spark.mongodb.input.collection", "map_audit_job_status") \
+    .getOrCreate()
+
+# Reading data from MongoDB
+df = spark.read.format("mongo").load()
+
+# Filtering data where `audit_pipeline_id` starts with "IBS"
+filtered_df = df.filter(df.audit_pipeline_id.startswith("IBS"))
+
+# Show the results
+filtered_df.show()
+
+# Stop the Spark session
+spark.stop()
