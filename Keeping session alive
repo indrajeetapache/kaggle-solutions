@@ -53,3 +53,13 @@ if __name__ == "__main__":
         ]
     }
 }
+
+
+
+
+import argparse
+parser = argparse.ArgumentParser(description="Demo Script")
+parser.add_argument('--environment', type=str, default='DEV', choices=['DEV', 'PROD', 'UAT'],
+                        help='Specifies the environment to operate in (default: DEV)')
+args = parser.parse_args()
+environment = args.environment
