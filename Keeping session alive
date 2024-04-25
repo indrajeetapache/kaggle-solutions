@@ -1,12 +1,1 @@
-val partitionColumn = "partition_column_name"
 
-// Show partitions and extract the partition values
-val partitionsDF = spark.sql(s"SHOW PARTITIONS $tableName")
-val partitionValues = partitionsDF.selectExpr(s"substring(`partition`, 12) as $partitionColumn")
-  .orderBy(s"$partitionColumn DESC")
-  .limit(7)
-  .collect()
-  .map(_.getString(0))
-
-// Use the partition values to filter your DataFrame
-val filteredDF = df.filter(s"$partitionColumn IN ${partitionValues.mkString("('", "', '", "')")}")
