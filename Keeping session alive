@@ -1,1 +1,8 @@
+val lastSevenDistinctProcessDates = partitionsDF
+  .selectExpr("substring_index(`partition`, '/', 1) as process_date") // Extracts the first part before '/'
+  .distinct() // Ensures that only unique dates are considered
+  .orderBy("process_date DESC") // Orders them by date descending
+  .limit(7) // Takes the last 7 unique dates
+  .collect()
+  .map(_.getString(0)) // Maps them to an array of strings
 
