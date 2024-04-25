@@ -1,62 +1,12 @@
-import json
-from pymongo import MongoClient
+val partitionColumn = "partition_column_name"
 
-class MongoDBOperations:
-    def __init__(self, config_path):
-        self.config_path = config_path
-        self.client = None
-        self.db = None
-        self.collection = None
-        self.config = self.load_config()
+// Show partitions and extract the partition values
+val partitionsDF = spark.sql(s"SHOW PARTITIONS $tableName")
+val partitionValues = partitionsDF.selectExpr(s"substring(`partition`, 12) as $partitionColumn")
+  .orderBy(s"$partitionColumn DESC")
+  .limit(7)
+  .collect()
+  .map(_.getString(0))
 
-    def load_config(self):
-        """Load the configuration from a JSON file."""
-        with open(self.config_path, 'r') as file:
-            return json.load(file)
-
-    def connect(self):
-        """Connect to MongoDB using settings from the config file."""
-        connection_string = self.config['connection_string']
-        self.client = MongoClient(connection_string)
-        self.db = self.client[self.config['database']]
-        self.collection = self.db[self.config['collection']]
-        print("Connected to MongoDB:", connection_string)
-
-    def query(self):
-        """Perform a query on the MongoDB collection using the query from config."""
-        query = self.config['query']
-        documents = self.collection.find(query)
-        return list(documents)  # Convert cursor to list
-
-    @staticmethod
-    def main():
-        """Main method to be the entry point of the script."""
-        mongo_operations = MongoDBOperations('config.json')
-        mongo_operations.connect()
-        documents = mongo_operations.query()
-        for document in documents:
-            print(document)
-
-# This allows the script to be run directly from the command line
-if __name__ == "__main__":
-    MongoDBOperations.main()
-
-
-config_json = '''
-{
-  "database": "your_database_name",
-  "collection": "your_collection_name",
-  "query": {
-    "$or": [
-      {"audit_pipeline_id": {"$regex": "^IBS1234.*"}},
-      {"audit_pipeline_id": {"$regex": "^IBS987.*"}}
-    ],
-    "autosysjobname.PROD": "169912_CSV_CMD"
-  }
-}
-'''
-config = json.loads(config_json)
-query_result = collection.find(config['query'])
-for document in query_result:
-    # Handle each document
-    print(document)
+// Use the partition values to filter your DataFrame
+val filteredDF = df.filter(s"$partitionColumn IN ${partitionValues.mkString("('", "', '", "')")}")
