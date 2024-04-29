@@ -1,5 +1,2 @@
-# Assuming your list of dictionaries is named 'data'
-filtered_dicts = [d for d in data if d.get('database_name') == 'gcganamrswp_work' and d.get('table_name') == 'your_table_name']
-
-# Now 'filtered_dicts' contains only the dictionaries where both 'database_name' and 'table_name' match the specified values
+---
 
