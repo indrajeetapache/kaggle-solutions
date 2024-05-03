@@ -1,2 +1,18 @@
----
-
+{
+  "_id": ObjectId("..."),
+  "timestamp": ISODate("..."),
+  "audit_pipeline_id": "123456",
+  "framework_name": "YourFramework",
+  "framework_version": "1.0",
+  "database_name": "your_database",
+  "table_name": "your_table",
+  "filename": "data.csv",
+  "reconciliation_success": false,
+  "failure_reason": "Count mismatch",
+  "failure_validationkeys": ["count", "filename", "partition_database"],
+  "details": {
+    "prod_count": 1000,
+    "cob_count": 950,
+    "reconciliation_details": "Reconciliation failed"
+  }
+}
