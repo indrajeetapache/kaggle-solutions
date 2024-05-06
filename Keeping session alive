@@ -31,3 +31,15 @@ with open(file_path, 'r') as file:
         data.append(json.loads(line))  # Load each line as a separate JSON object
 
 print(data)
+
+
+=====
+
+search_criteria = [
+    {'key1': 'value1', 'key2': 'value2'},
+    {'key1': 'value3', 'key2': 'value4'},
+    # Add more key-value pairs as needed
+]
+
+# Filter the list of dictionaries based on the presence of any of the search criteria
+filtered_data = [d for d in data if any(all(d.get(key) == value for key, value in criteria.items()) for criteria in search_criteria)]
