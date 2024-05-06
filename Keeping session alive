@@ -42,6 +42,16 @@ search_criteria_lower = [{k: v.lower() for k, v in criteria.items()} for criteri
 filtered_data = [d for d in data if any(all(d.get(key, '').lower() == value for key, value in criteria.items()) for criteria in search_criteria_lower)]
 ===============
 
+import pandas as pd
+import json
+
+# Path to your JSON file
+file_path = 'your_data.json'
+
+# Load the JSON data into a Python list of dictionaries
+with open(file_path, 'r') as file:
+    data = json.load(file)  # This loads the whole JSON array into a list of dictionaries
+
 # Define the dictionary containing keys and values to search for
 search_dict = {
     'key1': 'value1',
@@ -49,24 +59,17 @@ search_dict = {
     # Add more key-value pairs as needed
 }
 
-# Define the dictionary containing keys and values to be matched against
-match_dict = {
-    'match_key1': 'match_value1',
-    'match_key2': 'match_value2',
-    # Add more key-value pairs as needed
-}
-
-# Convert values in both dictionaries to lowercase for case-insensitive comparison
+# Convert values in the search dictionary to lowercase for case-insensitive comparison
 search_dict_lower = {k: v.lower() for k, v in search_dict.items()}
-match_dict_lower = {k: v.lower() for k, v in match_dict.items()}
 
-# Convert values in both dictionaries to lowercase for case-insensitive comparison
-search_dict_lower = {k: v.lower() for k, v in search_dict.items()}
-match_dict_lower = {k: v.lower() for k, v in match_dict.items()}
+# Filter the list of dictionaries based on the values in the nested dictionary
+filtered_data = [d for d in data if isinstance(d.get('other_keys'), dict) and all(d.get('other_keys').get(key, '').lower() == value for key, value in search_dict_lower.items())]
 
-# Filter the list of dictionaries based on the values in match_dict
-filtered_data = [d for d in data if all(d.get(match_key, '').lower() == match_value for match_key, match_value in match_dict_lower.items())]
+# Filter the remaining dictionaries based on the keys and values in the main dictionary
+filtered_data = [d for d in filtered_data if all(d.get(key, '').lower() == value for key, value in search_dict_lower.items())]
 
-# Filter the remaining dictionaries based on the keys and values in search_dict
-filtered_data = [d for d in filtered_data if all(d.get(search_key, '').lower() == search_value for search_key, search_value in search_dict_lower.items())]
+# Create a DataFrame from the filtered list of dictionaries
 df = pd.DataFrame(filtered_data)
+
+# Display the DataFrame
+print(df)
