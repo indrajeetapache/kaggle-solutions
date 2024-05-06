@@ -1,18 +1,20 @@
-{
-  "_id": ObjectId("..."),
-  "timestamp": ISODate("..."),
-  "audit_pipeline_id": "123456",
-  "framework_name": "YourFramework",
-  "framework_version": "1.0",
-  "database_name": "your_database",
-  "table_name": "your_table",
-  "filename": "data.csv",
-  "reconciliation_success": false,
-  "failure_reason": "Count mismatch",
-  "failure_validationkeys": ["count", "filename", "partition_database"],
-  "details": {
-    "prod_count": 1000,
-    "cob_count": 950,
-    "reconciliation_details": "Reconciliation failed"
-  }
+import re
+
+# Create a regular expression to find "ibd" in the id field
+regex = re.compile("ibd", re.IGNORECASE)  # re.IGNORECASE to make the search case-insensitive
+
+# Additional filter criteria
+additional_filter = {
+    "reconciliation_success": True,
+    "timestamp": {"$gte": start_date, "$lte": end_date}
 }
+
+# Merge the regular expression filter and additional filter criteria
+query_filter = {"id": regex, **additional_filter}
+
+# Perform the query using the regular expression and additional filter criteria
+documents = collection.find(query_filter)
+
+# Print each matching document
+for doc in documents:
+    print(doc)
