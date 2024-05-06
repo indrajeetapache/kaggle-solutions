@@ -60,8 +60,13 @@ match_dict = {
 search_dict_lower = {k: v.lower() for k, v in search_dict.items()}
 match_dict_lower = {k: v.lower() for k, v in match_dict.items()}
 
+# Convert values in both dictionaries to lowercase for case-insensitive comparison
+search_dict_lower = {k: v.lower() for k, v in search_dict.items()}
+match_dict_lower = {k: v.lower() for k, v in match_dict.items()}
+
+# Filter the list of dictionaries based on the values in match_dict
+filtered_data = [d for d in data if all(d.get(match_key, '').lower() == match_value for match_key, match_value in match_dict_lower.items())]
+
 # Filter the remaining dictionaries based on the keys and values in search_dict
 filtered_data = [d for d in filtered_data if all(d.get(search_key, '').lower() == search_value for search_key, search_value in search_dict_lower.items())]
-
-# Create a DataFrame from the filtered list of dictionaries
 df = pd.DataFrame(filtered_data)
