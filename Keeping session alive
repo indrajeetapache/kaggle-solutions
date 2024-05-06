@@ -40,3 +40,25 @@ search_criteria_lower = [{k: v.lower() for k, v in criteria.items()} for criteri
 
 # Filter the list of dictionaries based on the presence of any of the search criteria
 filtered_data = [d for d in data if any(all(d.get(key, '').lower() == value for key, value in criteria.items()) for criteria in search_criteria_lower)]
+===============
+
+# Define the dictionary containing keys and values to search for
+search_dict = {
+    'key1': 'value1',
+    'key2': 'value2',
+    # Add more key-value pairs as needed
+}
+
+# Define the dictionary containing keys and values to be matched against
+match_dict = {
+    'match_key1': 'match_value1',
+    'match_key2': 'match_value2',
+    # Add more key-value pairs as needed
+}
+
+# Convert values in both dictionaries to lowercase for case-insensitive comparison
+search_dict_lower = {k: v.lower() for k, v in search_dict.items()}
+match_dict_lower = {k: v.lower() for k, v in match_dict.items()}
+
+# Filter the list of dictionaries based on the values in match_dict
+filtered_data = [d for d in data if all(d.get(match_key, '').lower() == match_value for match_key, match_value in match_dict_lower.items())]
