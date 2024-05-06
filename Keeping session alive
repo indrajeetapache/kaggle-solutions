@@ -18,3 +18,16 @@ documents = collection.find(query_filter)
 # Print each matching document
 for doc in documents:
     print(doc)
+====
+
+import json
+
+# Path to your JSON file
+file_path = 'your_data.json'
+
+data = []
+with open(file_path, 'r') as file:
+    for line in file:
+        data.append(json.loads(line))  # Load each line as a separate JSON object
+
+print(data)
