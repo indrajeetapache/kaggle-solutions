@@ -73,3 +73,6 @@ df = pd.DataFrame(filtered_data)
 
 # Display the DataFrame
 print(df)
+====
+
+jobdetails_Collection_Filtered_dict = [d for d in jobdetails_Collection_Filtered_dict if isinstance(d.get('other_keys'), dict) and all(d.get('other_keys').get(key, "").lower() == value for key, value in collection_child_Search_criteria)]
