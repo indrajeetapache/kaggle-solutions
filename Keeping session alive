@@ -122,3 +122,23 @@ df = pd.DataFrame(filtered_data)
 
 # Display the DataFrame
 print(df)
+====
+
+f1['audit_run_id'] = df1['other_keys'].apply(lambda x: x.get('audit_run_id', None))
+df1['tgt_record_count'] = df1['other_keys'].apply(lambda x: x.get('tgt_record_count', None))
+
+# Do the same for df2
+df2['audit_run_id'] = df2['other_keys'].apply(lambda x: x.get('audit_run_id', None))
+df2['tgt_record_count'] = df2['other_keys'].apply(lambda x: x.get('tgt_record_count', None))
+
+# Merge DataFrames based on 'audit_run_id'
+merged_df = pd.merge(df1, df2, on='audit_run_id', suffixes=('_df1', '_df2'))
+
+# Display the merged DataFrame
+print(merged_df)
+# Check if 'tgt_record_count' matches between the two DataFrames
+merged_df['tgt_record_count_match'] = merged_df['tgt_record_count_df1'] == merged_df['tgt_record_count_df2']
+
+# Display the result
+print(merged_df[['audit_run_id', 'tgt_record_count_df1', 'tgt_record_count_df2', 'tgt_record_count_match']])
+
