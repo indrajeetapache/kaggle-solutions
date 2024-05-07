@@ -1,14 +1,18 @@
+# Create a regular expression for case-insensitive matching of job_status
+regex_job_status = re.compile('^Success$', re.IGNORECASE)
+
 # Create regular expressions for case-insensitive matching of job types
-insert_timestamp = 12458963 
 job_types = ["ingestion", "std", "ReconProfile"]
 regex_job_types = [re.compile(f'^{job_type}$', re.IGNORECASE) for job_type in job_types]
 
 # Define the query using regular expressions
 query = {
-    "job_status": "Success",
+    "job_status": regex_job_status,
     "job_type": {"$in": regex_job_types},
     "some_timestamp_field": {"$gte": int(insert_timestamp)}
 }
+# Perform the query using the conditions
+results = main_collection.find(query)
 ======
 
 # Access the 'recon_profile_collection'
