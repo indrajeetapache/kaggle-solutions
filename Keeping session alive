@@ -98,3 +98,27 @@ df = pd.DataFrame(filtered_data)
 
 # Display the DataFrame
 print(df)
+=======
+
+import pandas as pd
+
+# Assuming your list of dictionaries is stored in jobdetails_Collection_Filtered_dict
+
+# Define the search criteria, directly including paths for nested dictionaries
+search_criteria = {
+    'other_keys.databaseName': 'your_database_name',
+    'other_keys.TableName': 'your_table_name',
+    'job_status': 'Success',
+    'exec_env': 'PROD'
+}
+
+# Filter the list of dictionaries based on the search criteria
+filtered_data = [d for d in jobdetails_Collection_Filtered_dict if all(
+    d.get(key.split('.')[0]).get(key.split('.')[1], {}) == value if '.' in key else d.get(key) == value
+    for key, value in search_criteria.items())]
+
+# Create a DataFrame from the filtered list of dictionaries
+df = pd.DataFrame(filtered_data)
+
+# Display the DataFrame
+print(df)
