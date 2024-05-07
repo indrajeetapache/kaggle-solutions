@@ -1,23 +1,19 @@
-import re
-
-# Create a regular expression to find "ibd" in the id field
-regex = re.compile("ibd", re.IGNORECASE)  # re.IGNORECASE to make the search case-insensitive
-
-# Additional filter criteria
-additional_filter = {
-    "reconciliation_success": True,
-    "timestamp": {"$gte": start_date, "$lte": end_date}
+query = {
+    "job_status": "Success",
+    "job_type": {"$in": ["ingestion", "std", "ReconProfile"]},
+    "some_timestamp_field": {"$gte": int(insert_timestamp)}
 }
 
-# Merge the regular expression filter and additional filter criteria
-query_filter = {"id": regex, **additional_filter}
+# Perform the query using the conditions
+results = main_collection.find(query)
+======
 
-# Perform the query using the regular expression and additional filter criteria
-documents = collection.find(query_filter)
+# Access the 'recon_profile_collection'
+recon_profile_collection = db["recon_profile_collection"]
 
-# Print each matching document
-for doc in documents:
-    print(doc)
+# Fetch the most recent timestamp
+latest_entry = recon_profile_collection.find_one({}, sort=[("insert_timestamp", -1)])
+insert_timestamp = latest_entry['insert_timestamp']['$date']['$numberLong']
 ====
 
 import json
