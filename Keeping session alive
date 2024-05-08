@@ -232,30 +232,30 @@ DF operations
 =======
 
 import pandas as pd
-import json
 
-# If 'Reconciliation metrics' is a stringified JSON, convert it back to dictionary
-df['Reconciliation metrics'] = df['Reconciliation metrics'].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
-# Normalize the nested JSON data into a flat table
-Normalize the Nested Data
-df_metrics = pd.json_normalize(df['Reconciliation metrics'])
+# Assuming 'df' is the DataFrame and 'Reconciliation metrics' is the column containing nested JSON
+# Normalize the nested JSON data into separate columns for each part of 'Reconciliation metrics'
+df_expanded = df['Reconciliation metrics'].apply(pd.Series)
 
-#split data by prod and cob 
+# Expand PROD and COB data into their own DataFrame columns
+df_prod = df_expanded['PROD'].apply(lambda x: x[0] if x else {}).apply(pd.Series)
+df_cob = df_expanded['COB'].apply(lambda x: x[0] if x else {}).apply(pd.Series)
 
-# Assuming 'df_metrics' has columns like 'COB.tgt_count' and 'Prod.tgt_count'
-df_metrics['COB_tgt_count'] = df_metrics['COB.tgt_count']
-df_metrics['Prod_tgt_count'] = df_metrics['Prod.tgt_count']
+# Provide default values for hash_value and tgt_rec_count if missing
+df_prod['hash_value'] = df_prod['hash_value'].fillna('NA')
+df_cob['hash_value'] = df_cob['hash_value'].fillna('NA')
+df_prod['tgt_rec_count'] = df_prod['tgt_rec_count'].fillna(0)
+df_cob['tgt_rec_count'] = df_cob['tgt_rec_count'].fillna(0)
 
-# Drop original nested columns if necessary
-df_metrics.drop(columns=[col for col in df_metrics.columns if '.' in col], inplace=True)
-#merging back to original df
+# Merge these new DataFrames back to the original DataFrame with appropriate prefixes
+df_final = pd.concat([df, df_prod.add_prefix('PROD_'), df_cob.add_prefix('COB_')], axis=1)
 
-# Merge or concatenate the new flat metrics back to the original DataFrame
-df_final = df.join(df_metrics)
+# Compare hash_value and tgt_rec_count between PROD and COB
+df_final['hash_value_match'] = df_final['PROD_hash_value'] == df_final['COB_hash_value']
+df_final['tgt_rec_count_match'] = df_final['PROD_tgt_rec_count'] == df_final['COB_tgt_rec_count']
 
-#final comparing 
+# Optionally, fill or clean further if necessary
+df_final.fillna('NA', inplace=True)  # Replace any remaining NaN values with 'NA'
 
-# Add a new column to check if the values match
-df_final['tgt_count_match'] = df_final['COB_tgt_count'] == df_final['Prod_tgt_count']
-
-
+# Print or output the DataFrame to review the results
+print(df_final[['PROD_hash_value', 'COB_hash_value', 'hash_value_match', 'PROD_tgt_rec_count', 'COB_tgt_rec_count', 'tgt_rec_count_match']])
