@@ -145,9 +145,27 @@ merged_df['tgt_record_count_match'] = merged_df['tgt_record_count_df1'] == merge
 # Display the result
 print(merged_df[['audit_run_id', 'tgt_record_count_df1', 'tgt_record_count_df2', 'tgt_record_count_match']])
 ====================
+def get_nested_value(d, key_path):
+    """Safely get a nested value from a dictionary."""
+    current_value = d
+    for key in key_path.split('.'):
+        if isinstance(current_value, dict) and key in current_value:
+            current_value = current_value[key]
+        else:
+            return None
+    return current_value
 
-obdetails_Collection_Filtered_dict = [
-    {'job_status': 'Success','other_keys': { 'ingestion_type': 'dual', 'details': {'audit_run_id': 123}}},
-    {''job_status': 'Success',other_keys': { 'ingestion_type': 'single', 'details': {'audit_run_id': 456}}}
-] can rewrite for this example job status and ingestion type 
+# Define search criteria
+search_criteria = {
+    'job_status': 'Success',  # Top-level key
+    'other_keys.ingestion_type': 'dual'  # Nested key
+}
 
+# Filter the list of dictionaries based on nested criteria
+filtered_dictionaries = [
+    d for d in jobdetails_Collection_Filtered_dict
+    if all(get_nested_value(d, key) == value for key, value in search_criteria.items())
+]
+
+# Output the filtered dictionaries
+print(filtered_dictionaries)
