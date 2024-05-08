@@ -169,3 +169,29 @@ filtered_dictionaries = [
 
 # Output the filtered dictionaries
 print(filtered_dictionaries)
+
+
+========================
+filter dict ingestion type
+===========================
+
+# Example list of dictionaries (constructed based on the image's structure)
+jobdetails_Collection_Filtered_dict = [
+    {'job_status': 'Success', 'ingestion_type': 'dual', 'details': {'audit_run_id': 123}},
+    {'job_status': 'Success', 'ingestion_type': 'single', 'details': {'audit_run_id': 456}},
+    {'job_status': 'Failure', 'ingestion_type': 'dual', 'details': {'audit_run_id': 789}}
+]
+
+# Define the search criteria for top-level keys
+search_criteria = {'job_status': 'Success', 'ingestion_type': 'dual'}
+
+# Filtered list of dictionaries based on criteria
+filtered_dictionaries = [
+    d for d in jobdetails_Collection_Filtered_dict
+    if all(d.get(key) == value for key, value in search_criteria.items())
+]
+
+# Print the filtered dictionaries
+for entry in filtered_dictionaries:
+    print(entry)
+
