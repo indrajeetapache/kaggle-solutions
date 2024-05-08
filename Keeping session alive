@@ -144,4 +144,10 @@ merged_df['tgt_record_count_match'] = merged_df['tgt_record_count_df1'] == merge
 
 # Display the result
 print(merged_df[['audit_run_id', 'tgt_record_count_df1', 'tgt_record_count_df2', 'tgt_record_count_match']])
+====================
+
+obdetails_Collection_Filtered_dict = [
+    {'job_status': 'Success','other_keys': { 'ingestion_type': 'dual', 'details': {'audit_run_id': 123}}},
+    {''job_status': 'Success',other_keys': { 'ingestion_type': 'single', 'details': {'audit_run_id': 456}}}
+] can rewrite for this example job status and ingestion type 
 
