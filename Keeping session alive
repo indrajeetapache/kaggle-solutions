@@ -227,4 +227,35 @@ filtered_dictionaries = [
 for entry in filtered_dictionaries:
     print(entry)
 
+========
+DF operations 
+=======
+
+import pandas as pd
+import json
+
+# If 'Reconciliation metrics' is a stringified JSON, convert it back to dictionary
+df['Reconciliation metrics'] = df['Reconciliation metrics'].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
+# Normalize the nested JSON data into a flat table
+Normalize the Nested Data
+df_metrics = pd.json_normalize(df['Reconciliation metrics'])
+
+#split data by prod and cob 
+
+# Assuming 'df_metrics' has columns like 'COB.tgt_count' and 'Prod.tgt_count'
+df_metrics['COB_tgt_count'] = df_metrics['COB.tgt_count']
+df_metrics['Prod_tgt_count'] = df_metrics['Prod.tgt_count']
+
+# Drop original nested columns if necessary
+df_metrics.drop(columns=[col for col in df_metrics.columns if '.' in col], inplace=True)
+#merging back to original df
+
+# Merge or concatenate the new flat metrics back to the original DataFrame
+df_final = df.join(df_metrics)
+
+#final comparing 
+
+# Add a new column to check if the values match
+df_final['tgt_count_match'] = df_final['COB_tgt_count'] == df_final['Prod_tgt_count']
+
 
