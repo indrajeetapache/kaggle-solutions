@@ -261,13 +261,8 @@ df_final.fillna('NA', inplace=True)  # Replace any remaining NaN values with 'NA
 print(df_final[['PROD_hash_value', 'COB_hash_value', 'hash_value_match', 'PROD_tgt_rec_count', 'COB_tgt_rec_count', 'tgt_rec_count_match']])
 =================
 
-import pandas as pd
-import json
-
-# If 'other_keys' contains stringified JSON, convert it to dictionary
-df['other_keys'] = df['other_keys'].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 def extract_values(data, key):
-    # This function navigates through a nested dictionary to extract values by key
+    """Recursively search for values of a specific key in nested dict/list."""
     if isinstance(data, dict):
         for k, v in data.items():
             if k == key:
@@ -278,9 +273,27 @@ def extract_values(data, key):
         for item in data:
             yield from extract_values(item, key)
 
-# Apply the function to each row and store results in new columns
-df['audit_run_ids'] = df['other_keys'].apply(lambda x: list(extract_values(x, 'audit_run_id')))
-df['tgt_rec_counts'] = df['other_keys'].apply(lambda x: list(extract_values(x, 'tgt_rec_count')))
-# Option to expand lists into new rows (exploding the lists)
-df = df.explode('audit_run_ids').rename(columns={'audit_run_ids': 'audit_run_id'})
-df = df.explode('tgt_rec_counts').rename(columns={'tgt_rec_counts': 'tgt_rec_count'})
+# Assuming your DataFrame has a column 'reconciliation_metrics' which contains the nested dictionaries
+df['audit_run_ids'] = df['reconciliation_metrics'].apply(lambda x: list(extract_values(x, 'audit_run_id')))
+===
+Example 
+
+sample_data = {
+    "reconciliation_metrics": {
+        "PROD": {
+            "details": {
+                "audit_run_id": "PROD123"
+            }
+        },
+        "COB": {
+            "details": {
+                "audit_run_id": "COB456"
+            }
+        }
+    }
+}
+
+print(list(extract_values(sample_data, 'audit_run_id')))  # Expected Output: ['PROD123', 'COB456']
+# Apply and extract audit_run_ids
+df['audit_run_ids'] = df['reconciliation_metrics'].apply(lambda x: list(extract_values(x, 'audit_run_id')))
+
