@@ -1,41 +1,35 @@
-def flatten_reconciliation_metrics(row):
-    # Extract the 'other_keys' dictionary
-    other_keys = row.get('other_keys', {})
-
-    # Extract the 'reconciliation_metrics' from 'other_keys'
-    reconciliation_metrics = other_keys.get('reconciliation_metrics', {})
-
-    # Remove 'reconciliation_metrics' from 'other_keys' if you don't need it nested anymore
-    if 'reconciliation_metrics' in other_keys:
-        del other_keys['reconciliation_metrics']
-
-    # Merge 'reconciliation_metrics' into the main dictionary
-    updated_row = {**row, **reconciliation_metrics}
-
-    # Optionally update 'other_keys' without 'reconciliation_metrics'
-    updated_row['other_keys'] = other_keys
-
-    return updated_row
-
+def promote_reconciliation_metrics(row):
+    # Extract 'reconciliation_metrics' from 'other_keys' if it exists
+    if 'other_keys' in row and 'reconciliation_metrics' in row['other_keys']:
+        row['reconciliation_metrics'] = row['other_keys']['reconciliation_metrics']
+    
+    # Optionally, remove 'reconciliation_metrics' from 'other_keys' if no longer needed there
+    # Comment out the next line if you want to keep it in 'other_keys' as well
+    if 'reconciliation_metrics' in row['other_keys']:
+        del row['other_keys']['reconciliation_metrics']
+    
+    return row
 import pandas as pd
 
-# Sample DataFrame setup - simulate reading from your data
+# Sample DataFrame creation (Modify according to your actual DataFrame loading method)
 df = pd.DataFrame([{
-    'event_id': 'some_id',
+    'id': 'some_id',
     'other_keys': {
+        'fid': 'some_fid',
         'reconciliation_metrics': {
-            'tgt_rec_count': '14',
-            'audit_run_id': '123456'
+            'audit_run_id': '123456',
+            'tgt_rec_count': '14'
         },
         'some_other_metric': 'value'
     }
 }])
 
-# Apply the flattening function to each row in the DataFrame
-df = df.apply(flatten_reconciliation_metrics, axis=1)
+# Apply the function to each row in the DataFrame
+df = df.apply(promote_reconciliation_metrics, axis=1)
 
-# Now, df should have 'reconciliation_metrics' flattened into each row's dictionary
-print(df.head())
+# Now, df should have 'reconciliation_metrics' at the top level
+print(df.iloc[0])  # Printing the first row to check the structure
+
 
 ======================
 def safe_json_loads(x):
