@@ -1,3 +1,12 @@
+def safe_json_loads(x):
+    try:
+        return json.loads(x)
+    except ValueError:
+        return x  # Return the input as-is if it's not a valid JSON string
+
+df['other_keys'] = df['other_keys'].apply(safe_json_loads)
+
+
 sample_data = {
     'other_keys': {  # This represents the actual structure as it might appear in your DataFrame
         'reconciliation_metrics': [
