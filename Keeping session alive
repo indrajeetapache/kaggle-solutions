@@ -1,3 +1,11 @@
+# Unpack 'other_keys' into separate columns directly within the DataFrame
+df = df.join(df['other_keys'].apply(pd.Series))
+
+# Optionally, you can drop the original 'other_keys' column if it's no longer needed
+df.drop('other_keys', axis=1, inplace=True)
+
+print(df)
+
 # Further flatten nested dictionaries like 'reconciliation_metrics'
 df = df.join(df['reconciliation_metrics'].apply(pd.Series))
 
