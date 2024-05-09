@@ -1,3 +1,15 @@
+import pandas as pd
+import json
+
+# Convert stringified JSON in 'reconciliation_metrics' to Python objects and extract 'audit_run_id'
+df1_exploded['reconciliation_metrics'] = df1_exploded['reconciliation_metrics'].apply(
+    lambda x: json.loads(x) if isinstance(x, str) else x
+)
+df1_exploded['audit_run_ids'] = df1_exploded['reconciliation_metrics'].apply(
+    lambda x: [d.get('audit_run_id') for d in x if isinstance(d, dict)]
+)
+
+===============
 # Check the type of each item in 'reconciliation_metrics'
 print(df1_exploded['reconciliation_metrics'].apply(type).value_counts())
 
