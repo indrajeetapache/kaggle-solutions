@@ -1,35 +1,9 @@
+# Further flatten nested dictionaries like 'reconciliation_metrics'
+df = df.join(df['reconciliation_metrics'].apply(pd.Series))
 
-import pandas as pd
+# Remove the now redundant 'reconciliation_metrics' column
+df.drop('reconciliation_metrics', axis=1, inplace=True)
 
-# Example dictionary that mimics your MongoDB download
-data = [{
-    "id": "001",
-    "other_keys": {
-        "reconciliation_metrics": {
-            "audit_run_id": "123456",
-            "tgt_rec_count": "14"
-        },
-        "some_other_metric": "value"
-    }
-},
-{
-    "id": "002",
-    "other_keys": {
-        "reconciliation_metrics": {
-            "audit_run_id": "789012",
-            "tgt_rec_count": "20"
-        },
-        "some_other_metric": "another_value"
-    }
-}]
-
-# Create DataFrame
-df = pd.DataFrame(data)
-print(df)
-
-
-# Extract reconciliation_metrics to a new column
-df['reconciliation_metrics'] = df['other_keys'].apply(lambda x: x.get('reconciliation_metrics', {}))
 print(df)
 
 ===
