@@ -13,6 +13,12 @@ def robust_json_parse(x):
 df1_exploded['reconciliation_metrics'] = df1_exploded['reconciliation_metrics'].apply(
     lambda x: robust_json_parse(x) if isinstance(x, str) else x
 )
+or use this lambda 
+
+df1_exploded['reconciliation_metrics'] = df1_exploded['reconciliation_metrics'].apply(
+    lambda x: json.loads(re.sub(r"\'", '"', x)) if isinstance(x, str) else x
+)
+
 df1_exploded['audit_run_ids'] = df1_exploded['reconciliation_metrics'].apply(
     lambda x: [d.get('audit_run_id') for d in x if isinstance(d, dict)]
 )
