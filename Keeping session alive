@@ -1,3 +1,25 @@
+def extract_audit_run_id(metrics_list):
+    # This function extracts 'audit_run_id' from each dict in the list
+    # and returns a list of these IDs
+    return [metric.get('audit_run_id', None) for metric in metrics_list if isinstance(metric, dict)]
+
+# Apply this function to the DataFrame column
+df1_exploded['audit_run_ids'] = df1_exploded['reconciliation_metrics'].apply(extract_audit_run_id)
+
+
+def extract_tgt_rec_count(metrics_list):
+    # Extracts 'tgt_rec_count' from each dict in the list
+    return [metric.get('tgt_rec_count', None) for metric in metrics_list if isinstance(metric, dict)]
+
+# Apply this function
+df1_exploded['tgt_rec_counts'] = df1_exploded['reconciliation_metrics'].apply(extract_tgt_rec_count)
+
+# Option to explode the list if you need one ID per row (may duplicate other row data)
+df1_exploded = df1_exploded.explode('audit_run_ids')
+df1_exploded = df1_exploded.explode('tgt_rec_counts')
+
+
+=========
 # Unpack 'other_keys' into separate columns directly within the DataFrame
 df = df.join(df['other_keys'].apply(pd.Series))
 
