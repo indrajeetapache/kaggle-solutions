@@ -261,6 +261,9 @@ df_final.fillna('NA', inplace=True)  # Replace any remaining NaN values with 'NA
 print(df_final[['PROD_hash_value', 'COB_hash_value', 'hash_value_match', 'PROD_tgt_rec_count', 'COB_tgt_rec_count', 'tgt_rec_count_match']])
 =================
 
+import pandas as pd
+
+# Function to recursively extract values from nested dictionaries
 def extract_values(data, key):
     """Recursively search for values of a specific key in nested dict/list."""
     if isinstance(data, dict):
@@ -273,27 +276,27 @@ def extract_values(data, key):
         for item in data:
             yield from extract_values(item, key)
 
-# Assuming your DataFrame has a column 'reconciliation_metrics' which contains the nested dictionaries
-df['audit_run_ids'] = df['reconciliation_metrics'].apply(lambda x: list(extract_values(x, 'audit_run_id')))
-===
-Example 
+# Assuming df['other_keys'] contains the nested dictionaries with 'reconciliation_metrics'
+# First, ensure that 'other_keys' is a dictionary (if it's a stringified JSON, convert it)
+df['other_keys'] = df['other_keys'].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 
+# Apply the extraction function to the 'other_keys' column, targeting the nested 'reconciliation_metrics'
+df['audit_run_ids'] = df['other_keys'].apply(lambda x: list(extract_values(x.get('reconciliation_metrics', {}), 'audit_run_id')))
+
+# Show results
+print(df['audit_run_ids'])
+===
+
+sample 
 sample_data = {
-    "reconciliation_metrics": {
-        "PROD": {
-            "details": {
-                "audit_run_id": "PROD123"
-            }
-        },
-        "COB": {
-            "details": {
-                "audit_run_id": "COB456"
-            }
+    'reconciliation_metrics': {
+        'details': {
+            'audit_run_id': ['123', '456']
         }
     }
 }
 
-print(list(extract_values(sample_data, 'audit_run_id')))  # Expected Output: ['PROD123', 'COB456']
-# Apply and extract audit_run_ids
-df['audit_run_ids'] = df['reconciliation_metrics'].apply(lambda x: list(extract_values(x, 'audit_run_id')))
+# Test the function with sample data
+print(list(extract_values(sample_data, 'audit_run_id')))  # Expected to print ['123', '456']
+
 
