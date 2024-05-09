@@ -1,3 +1,39 @@
+
+import pandas as pd
+
+# Example dictionary that mimics your MongoDB download
+data = [{
+    "id": "001",
+    "other_keys": {
+        "reconciliation_metrics": {
+            "audit_run_id": "123456",
+            "tgt_rec_count": "14"
+        },
+        "some_other_metric": "value"
+    }
+},
+{
+    "id": "002",
+    "other_keys": {
+        "reconciliation_metrics": {
+            "audit_run_id": "789012",
+            "tgt_rec_count": "20"
+        },
+        "some_other_metric": "another_value"
+    }
+}]
+
+# Create DataFrame
+df = pd.DataFrame(data)
+print(df)
+
+
+# Extract reconciliation_metrics to a new column
+df['reconciliation_metrics'] = df['other_keys'].apply(lambda x: x.get('reconciliation_metrics', {}))
+print(df)
+
+===
+
 def promote_reconciliation_metrics(row):
     # Extract 'reconciliation_metrics' from 'other_keys' if it exists
     if 'other_keys' in row and 'reconciliation_metrics' in row['other_keys']:
