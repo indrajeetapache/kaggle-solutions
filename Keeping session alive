@@ -1,3 +1,31 @@
+# Check the type of each item in 'reconciliation_metrics'
+print(df1_exploded['reconciliation_metrics'].apply(type).value_counts())
+
+# Optionally, print out any rows that are not lists to inspect them
+for index, item in df1_exploded['reconciliation_metrics'].iteritems():
+    if not isinstance(item, list):
+        print(f"Index {index}: {item} (Type: {type(item)})")
+
+def extract_audit_run_id(metrics_list):
+    if not isinstance(metrics_list, list):
+        return None  # Return None or an empty list if the input is not a list
+    return [metric.get('audit_run_id', None) for metric in metrics_list if isinstance(metric, dict)]
+
+# Reapply the function with the updated error handling
+df1_exploded['audit_run_ids'] = df1_exploded['reconciliation_metrics'].apply(extract_audit_run_id)
+
+def extract_audit_run_id(metrics_list):
+    # Debug: Print the input to see what's going wrong
+    print(f"Processing: {metrics_list}")
+    if not isinstance(metrics_list, list):
+        print("Error: Not a list")
+        return None
+    return [metric.get('audit_run_id', None) for metric in metrics_list if isinstance(metric, dict)]
+
+# Reapply to check the outputs in the console
+df1_exploded['audit_run_ids'] = df1_exploded['reconciliation_metrics'].apply(extract_audit_run_id)
+
+======
 def extract_audit_run_id(metrics_list):
     # This function extracts 'audit_run_id' from each dict in the list
     # and returns a list of these IDs
