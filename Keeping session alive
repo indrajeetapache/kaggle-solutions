@@ -1,9 +1,17 @@
-import pandas as pd
 import json
+import re
 
-# Convert stringified JSON in 'reconciliation_metrics' to Python objects and extract 'audit_run_id'
+def robust_json_parse(x):
+    try:
+        # Basic conversion of single quotes to double quotes
+        corrected = re.sub(r"\'", '"', x)
+        return json.loads(corrected)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON: {e} - {x}")
+        return {}
+
 df1_exploded['reconciliation_metrics'] = df1_exploded['reconciliation_metrics'].apply(
-    lambda x: json.loads(x) if isinstance(x, str) else x
+    lambda x: robust_json_parse(x) if isinstance(x, str) else x
 )
 df1_exploded['audit_run_ids'] = df1_exploded['reconciliation_metrics'].apply(
     lambda x: [d.get('audit_run_id') for d in x if isinstance(d, dict)]
