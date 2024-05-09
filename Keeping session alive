@@ -1,3 +1,43 @@
+def flatten_reconciliation_metrics(row):
+    # Extract the 'other_keys' dictionary
+    other_keys = row.get('other_keys', {})
+
+    # Extract the 'reconciliation_metrics' from 'other_keys'
+    reconciliation_metrics = other_keys.get('reconciliation_metrics', {})
+
+    # Remove 'reconciliation_metrics' from 'other_keys' if you don't need it nested anymore
+    if 'reconciliation_metrics' in other_keys:
+        del other_keys['reconciliation_metrics']
+
+    # Merge 'reconciliation_metrics' into the main dictionary
+    updated_row = {**row, **reconciliation_metrics}
+
+    # Optionally update 'other_keys' without 'reconciliation_metrics'
+    updated_row['other_keys'] = other_keys
+
+    return updated_row
+
+import pandas as pd
+
+# Sample DataFrame setup - simulate reading from your data
+df = pd.DataFrame([{
+    'event_id': 'some_id',
+    'other_keys': {
+        'reconciliation_metrics': {
+            'tgt_rec_count': '14',
+            'audit_run_id': '123456'
+        },
+        'some_other_metric': 'value'
+    }
+}])
+
+# Apply the flattening function to each row in the DataFrame
+df = df.apply(flatten_reconciliation_metrics, axis=1)
+
+# Now, df should have 'reconciliation_metrics' flattened into each row's dictionary
+print(df.head())
+
+======================
 def safe_json_loads(x):
     try:
         return json.loads(x)
