@@ -1,1 +1,11 @@
+job_filter = f"""
+{{
+  "$match": {{
+    "$and": [
+      {{ "end_time": {{ "$gt": {{ "$date": "{min_true_ts}" }} }} }},
+      {{ "audit_pipeline_id": {{ "$regex": "{Audit_pipeline_name}" }} }}
+    ]
+  }}
+}}
+"""
 
