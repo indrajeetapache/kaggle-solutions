@@ -1,11 +1,18 @@
-job_filter = f"""
-{{
-  "$match": {{
-    "$and": [
-      {{ "end_time": {{ "$gt": {{ "$date": "{min_true_ts}" }} }} }},
-      {{ "audit_pipeline_id": {{ "$regex": "{Audit_pipeline_name}" }} }}
-    ]
-  }}
-}}
-"""
-
+def read_config(file_path):
+    """Reads a configuration file and returns the value of auditCustomMappingKeys."""
+    try:
+        with open(file_path, 'r') as file:
+            content = file.read()
+        
+        # Use regex to find auditCustomMappingKeys
+        match = re.search(r'^auditCustomMappingKeys\s*=\s*"(.*?)"', content, re.MULTILINE)
+        if match:
+            return {"auditCustomMappingKeys": match.group(1)}
+        else:
+            logger.error("auditCustomMappingKeys not found in the configuration file.")
+            return {}
+    except FileNotFoundError:
+        logger.error(f"Configuration file {file_path} not found.")
+    except IOError:
+        logger.error(f"Error opening configuration file {file_path}.")
+    return {}
