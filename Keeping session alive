@@ -1,14 +1,15 @@
 def read_config(file_path):
-    """Reads a configuration file and returns the value of auditCustomMappingKeys."""
+    """Reads a configuration file and returns the value of auditCustomMappingKeys as a dictionary."""
     try:
         with open(file_path, 'r') as file:
             content = file.read()
         
-        # Use regex to find auditCustomMappingKeys
-        match = re.search(r'^auditCustomMappingKeys\s*=\s*["\'](.*?)["\']', content, re.MULTILINE)
-match = re.search(r'auditCustomMappingKeys\s*=\s*\{(.*?)\}', content, re.DOTALL)
+        # Use regex to find auditCustomMappingKeys with different quote types and spaces
+        match = re.search(r'auditCustomMappingKeys\s*=\s*\{(.*?)\}', content, re.DOTALL)
         if match:
-            return {"auditCustomMappingKeys": match.group(1)}
+            keys_str = '{' + match.group(1).strip() + '}'
+            keys_dict = ast.literal_eval(keys_str)
+            return {"auditCustomMappingKeys": keys_dict}
         else:
             logger.error("auditCustomMappingKeys not found in the configuration file.")
             return {}
@@ -16,4 +17,6 @@ match = re.search(r'auditCustomMappingKeys\s*=\s*\{(.*?)\}', content, re.DOTALL)
         logger.error(f"Configuration file {file_path} not found.")
     except IOError:
         logger.error(f"Error opening configuration file {file_path}.")
+    except (SyntaxError, ValueError) as e:
+        logger.error(f"Error parsing auditCustomMappingKeys: {e}")
     return {}
