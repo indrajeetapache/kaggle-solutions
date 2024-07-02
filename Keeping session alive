@@ -4,19 +4,22 @@ def read_config(file_path):
         with open(file_path, 'r') as file:
             content = file.read()
         
-        # Use regex to find auditCustomMappingKeys with different quote types and spaces
-        match = re.search(r'auditCustomMappingKeys\s*=\s*\{(.*?)\}', content, re.DOTALL)
-        if match:
-            keys_str = '{' + match.group(1).strip() + '}'
-            keys_dict = ast.literal_eval(keys_str)
-            return {"auditCustomMappingKeys": keys_dict}
-        else:
-            logger.error("auditCustomMappingKeys not found in the configuration file.")
+        try:
+            # Use regex to find auditCustomMappingKeys with different quote types and spaces
+            match = re.search(r'auditCustomMappingKeys\s*=\s*\{(.*?)\}', content, re.DOTALL)
+            if match:
+                keys_str = '{' + match.group(1).strip() + '}'
+                keys_dict = ast.literal_eval(keys_str)
+                return {"auditCustomMappingKeys": keys_dict}
+            else:
+                logger.error("auditCustomMappingKeys not found in the configuration file.")
+                return {}
+        except (SyntaxError, ValueError) as e:
+            logger.error(f"Error parsing auditCustomMappingKeys: {e}")
             return {}
+            
     except FileNotFoundError:
         logger.error(f"Configuration file {file_path} not found.")
     except IOError:
         logger.error(f"Error opening configuration file {file_path}.")
-    except (SyntaxError, ValueError) as e:
-        logger.error(f"Error parsing auditCustomMappingKeys: {e}")
     return {}
