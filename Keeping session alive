@@ -5,7 +5,7 @@ def read_config(file_path):
             content = file.read()
         
         # Use regex to find auditCustomMappingKeys
-        match = re.search(r'^auditCustomMappingKeys\s*=\s*"(.*?)"', content, re.MULTILINE)
+        match = re.search(r'^auditCustomMappingKeys\s*=\s*["\'](.*?)["\']', content, re.MULTILINE)
         if match:
             return {"auditCustomMappingKeys": match.group(1)}
         else:
