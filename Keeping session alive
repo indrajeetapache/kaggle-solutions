@@ -1,17 +1,15 @@
-def read_config(file_path):
+ef read_config(file_path):
     """Reads a configuration file and returns the value of auditCustomMappingKeys as a dictionary."""
     try:
         with open(file_path, 'r') as file:
             content = file.read()
         
-        config_dict = {}
-        
-        # Split content into lines and parse into a dictionary
-        lines = content.split('\n')
-        for line in lines:
-            if '=' in line or ':' in line:
-                key, value = re.split(r'\s*[=:]\s*', line, 1)
-                config_dict[key.strip()] = value.strip().strip('"')
+        # Parse the content into a dictionary
+        config_dict = dict(
+            map(str.strip, re.split(r'\s*[=:]\s*', line, 1)) 
+            for line in content.split('\n') 
+            if '=' in line or ':' in line
+        )
         
         # Extract auditCustomMappingKeys and convert it to a dictionary
         audit_key = config_dict.get('auditCustomMappingKeys')
@@ -22,3 +20,12 @@ def read_config(file_path):
             except (SyntaxError, ValueError) as e:
                 logger.error(f"Error parsing auditCustomMappingKeys: {e}")
                 return {}
+        else:
+            logger.error("auditCustomMappingKeys not found in the configuration file.")
+            return {}
+            
+    except FileNotFoundError:
+        logger.error(f"Configuration file {file_path} not found.")
+    except IOError:
+        logger.error(f"Error opening configuration file {file_path}.")
+    return {}
