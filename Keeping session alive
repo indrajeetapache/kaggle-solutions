@@ -1,31 +1,3 @@
-ef read_config(file_path):
-    """Reads a configuration file and returns the value of auditCustomMappingKeys as a dictionary."""
-    try:
-        with open(file_path, 'r') as file:
-            content = file.read()
-        
-        # Parse the content into a dictionary
-        config_dict = dict(
-            map(str.strip, re.split(r'\s*[=:]\s*', line, 1)) 
-            for line in content.split('\n') 
-            if '=' in line or ':' in line
-        )
-        
-        # Extract auditCustomMappingKeys and convert it to a dictionary
-        audit_key = config_dict.get('auditCustomMappingKeys')
-        if audit_key:
-            try:
-                keys_dict = ast.literal_eval(audit_key)
-                return {"auditCustomMappingKeys": keys_dict}
-            except (SyntaxError, ValueError) as e:
-                logger.error(f"Error parsing auditCustomMappingKeys: {e}")
-                return {}
-        else:
-            logger.error("auditCustomMappingKeys not found in the configuration file.")
-            return {}
-            
-    except FileNotFoundError:
-        logger.error(f"Configuration file {file_path} not found.")
-    except IOError:
-        logger.error(f"Error opening configuration file {file_path}.")
-    return {}
+val schemaString = spark.read.textFile(metaFilePath).collect().mkString("\n")
+val mongoSchema = DataType.fromJson(schemaString).asInstanceOf[StructType]
+mongoSchema
