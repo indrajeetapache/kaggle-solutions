@@ -1,3 +1,42 @@
-val schemaString = spark.read.textFile(metaFilePath).collect().mkString("\n")
-val mongoSchema = DataType.fromJson(schemaString).asInstanceOf[StructType]
-mongoSchema
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.types._
+
+object DataFrameSizeEstimator {
+
+  // Define the size for each data type
+  val typeSizes = Map(
+    "BooleanType" -> 1,          // 1 byte
+    "ByteType" -> 1,             // 1 byte
+    "ShortType" -> 2,            // 2 bytes
+    "IntegerType" -> 4,          // 4 bytes
+    "LongType" -> 8,             // 8 bytes
+    "FloatType" -> 4,            // 4 bytes
+    "DoubleType" -> 8,           // 8 bytes
+    "DecimalType" -> 16,         // 16 bytes (depends on precision)
+    "StringType" -> 20,          // 20 bytes (average length assumed)
+    "BinaryType" -> 20,          // 20 bytes (average length assumed)
+    "TimestampType" -> 12,       // 12 bytes (8 bytes for time, 4 for nanoseconds)
+    "DateType" -> 4,             // 4 bytes
+    "ArrayType" -> 50,           // 50 bytes (very rough estimate)
+    "MapType" -> 100,            // 100 bytes (very rough estimate)
+    "StructType" -> 100          // 100 bytes (depends on fields, very rough estimate)
+  )
+
+  val defaultSize = 10  // Default size for unlisted data types
+
+  def estimateSize(df: DataFrame, numRows: Long): Long = {
+    val totalSize = df.schema.fields.map { field =>
+      typeSizes.getOrElse(field.dataType.simpleString, defaultSize)
+    }.sum
+    totalSize * numRows
+  }
+
+  def main(args: Array[String]): Unit = {
+    // Example usage
+    val df: DataFrame = ??? // Load your DataFrame here
+    val numRows = df.count()
+    val estimatedSize = estimateSize(df, numRows)
+    val sizeInMB = estimatedSize.toDouble / (1024 * 1024)  // Convert to MB
+    println(s"Estimated size of the DataFrame = $sizeInMB MB")
+  }
+}
