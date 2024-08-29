@@ -1,1 +1,44 @@
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.SparkSession
+
+val spark = SparkSession.builder()
+  .appName("Read JSON and Convert Timestamps")
+  .getOrCreate()
+
+// Reading the JSON data
+val jsonDF = spark.read
+  .format("json")
+  .load("/path/to/output.json")
+
+// Convert the timestamp to ISO 8601 format
+val formattedDF = jsonDF.withColumn("timestamp", date_format(col("timestamp"), "yyyy-MM-dd'T'HH:mm:ss'Z'"))
+
+// Show the result to verify
+formattedDF.show()
+
+// Optionally, you can save the converted data back to a different JSON file or another format
+formattedDF.write
+  .format("json")
+  .save("/path/to/converted_output.json")
+======
+
+import org.apache.spark.sql.SparkSession
+
+val spark = SparkSession.builder()
+  .appName("Max Timestamp from Hive")
+  .enableHiveSupport()
+  .getOrCreate()
+
+// Query to get the max timestamp
+val maxTimestampRow = spark.sql("SELECT MAX(timestamp) as max_ts FROM your_hive_table").collect()(0)
+val maxTimestamp = maxTimestampRow.getAs[java.sql.Timestamp]("max_ts")
+=============
+
+Convert to ISO 8601 Format
+
+import java.time.format.DateTimeFormatter
+import java.time.ZoneId
+
+val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+val maxTimestampISO = maxTimestamp.toInstant.atZone(ZoneId.of("UTC")).format(formatter)
 
