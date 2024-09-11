@@ -51,3 +51,22 @@ val query = """
 
 .option("lowerBound", "TO_DATE('01-JAN-20 00:00:00', 'DD-MON-YY HH24:MI:SS')")
 .option("upperBound", "TO_DATE('31-DEC-20 23:59:59', 'DD-MON-YY HH24:MI:SS')")
+
+========
+
+val query = """
+  (SELECT 
+    *,
+    (CAST(your_date_column AS DATE) - DATE '1970-01-01') * 86400 as unix_timestamp 
+   FROM your_table) tmp_table
+"""
+
+val df = spark.read.jdbc(
+  url = "jdbc:oracle:thin:@//your_host:port/your_service",
+  table = query,
+  columnName = "unix_timestamp",
+  lowerBound = "1577836800", // Unix timestamp for 01-JAN-20 00:00:00
+  upperBound = "1609459199", // Unix timestamp for 31-DEC-20 23:59:59
+  numPartitions = 10,
+  connectionProperties = connectionProperties
+)
