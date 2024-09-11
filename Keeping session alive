@@ -32,3 +32,6 @@ val df = spark.read.jdbc(
   connectionProperties = connectionProperties
 )
 spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
+
+.option("lowerBound", "TO_DATE('01-JAN-20 00:00:00', 'DD-MON-YY HH24:MI:SS')")
+.option("upperBound", "TO_DATE('31-DEC-20 23:59:59', 'DD-MON-YY HH24:MI:SS')")
