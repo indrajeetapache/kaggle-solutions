@@ -2,32 +2,7 @@ val dbtable = "(select * from PLNAPP1.MATCHED_APPLICATIONS where APPLICATION_REC
 val dbtable = "(select * from PLNAPP1.MATCHED_APPLICATIONS where APPLICATION_RECV_DT > TO_TIMESTAMP('09-MAY-22 10:39:51 AM', 'DD-MON-YY HH:MI:SS AM')) query"
 val dbtable = "(select * from PLNAPP1.MATCHED_APPLICATIONS where APPLICATION_RECV_DT > TO_TIMESTAMP('09-MAY-22 10:39:51', 'DD-MON-YY HH24:MI:SS')) query"
 
-val jdbcURL = "jdbc:oracle:thin:@oraasgt71-scan.nam.nsroot.net:8899/HAOTAPP25"
-val driver = "oracle.jdbc.driver.OracleDriver"
-val partitionColumn = "APPLICATION_RECV_DT"
-
-// Set the lower and upper bounds as formatted timestamp values
-val lowerBound = "TO_TIMESTAMP('09-MAY-22 10:39:51.000000000 AM', 'DD-MON-YY HH12:MI:SS.FF AM')"
-val upperBound = "TO_TIMESTAMP('16-MAY-22 00:06:17.000000000 AM', 'DD-MON-YY HH12:MI:SS.FF AM')"
-
-// Specify the number of partitions
-val numPartitions = 2
-
-// Query with the desired condition
-val dbtable = "(SELECT * FROM PLNAPP1.MATCHED_APPLICATIONS WHERE APPLICATION_RECV_DT > " + lowerBound + " AND APPLICATION_RECV_DT < " + upperBound + ") query"
-
-// Create a Map for the JDBC options
-val oracleReadOptions = Map(
-  "url" -> jdbcURL,
-  "driver" -> driver,
-  "dbtable" -> dbtable,
-  "user" -> "EAPCDERPED",
-  "password" -> "mC9y3Ult",
-  "partitionColumn" -> partitionColumn,
-  "lowerBound" -> lowerBound,
-  "upperBound" -> upperBound,
-  "numPartitions" -> numPartitions
-)
-
-// Reading data from Oracle using Spark
-val df = spark.read.format("jdbc").options(oracleReadOptions).load()
+val partitionColumn = "your_date_column"
+val lowerBound = "TO_DATE('01-JAN-20 12:00:00.00 AM', 'DD-MON-YY HH12:MI:SS.FF AM')"
+val upperBound = "TO_DATE('31-DEC-20 11:59:59.99 PM', 'DD-MON-YY HH12:MI:SS.FF AM')"
+val numPartitions = 10
