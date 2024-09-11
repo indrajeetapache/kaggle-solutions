@@ -35,3 +35,19 @@ spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
 .option("lowerBound", "TO_DATE('01-JAN-20 00:00:00', 'DD-MON-YY HH24:MI:SS')")
 .option("upperBound", "TO_DATE('31-DEC-20 23:59:59', 'DD-MON-YY HH24:MI:SS')")
+
+
+val query = """
+  (SELECT 
+    *,
+    TO_NUMBER(TO_CHAR(your_date_column, 'YYYYMMDDHH24MISS')) as date_num 
+   FROM your_table) tmp_table
+"""
+
+// Then use date_num as your partitionColumn
+.option("partitionColumn", "date_num")
+.option("lowerBound", "20200101000000")
+.option("upperBound", "20201231235959")
+
+.option("lowerBound", "TO_DATE('01-JAN-20 00:00:00', 'DD-MON-YY HH24:MI:SS')")
+.option("upperBound", "TO_DATE('31-DEC-20 23:59:59', 'DD-MON-YY HH24:MI:SS')")
