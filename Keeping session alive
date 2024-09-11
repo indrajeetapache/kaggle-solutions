@@ -70,3 +70,11 @@ val df = spark.read.jdbc(
   numPartitions = 10,
   connectionProperties = connectionProperties
 )
+
+
+val query = """
+  (SELECT 
+    *,
+    (CAST(your_date_column AS TIMESTAMP) - TIMESTAMP '1970-01-01 00:00:00') * 86400 as unix_timestamp 
+   FROM your_table) tmp_table
+"""
