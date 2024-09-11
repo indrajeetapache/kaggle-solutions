@@ -6,3 +6,28 @@ val partitionColumn = "your_date_column"
 val lowerBound = "TO_DATE('01-JAN-20 12:00:00.00 AM', 'DD-MON-YY HH12:MI:SS.FF AM')"
 val upperBound = "TO_DATE('31-DEC-20 11:59:59.99 PM', 'DD-MON-YY HH12:MI:SS.FF AM')"
 val numPartitions = 10
+
+
+// Define your query with a numeric representation of the date
+val query = """
+  (SELECT 
+    *,
+    TO_NUMBER(TO_CHAR(your_date_column, 'YYYYMMDDHHMI')) as date_num 
+   FROM your_table) tmp_table
+"""
+
+val partitionColumn = "date_num"
+val lowerBound = "202001010000" // Represents 01-JAN-20 00:00
+val upperBound = "202012312359" // Represents 31-DEC-20 23:59
+val numPartitions = 10
+
+// Load data in parallel
+val df = spark.read.jdbc(
+  url = "jdbc:oracle:thin:@//your_host:port/your_service",
+  table = query,
+  columnName = partitionColumn,
+  lowerBound = lowerBound,
+  upperBound = upperBound,
+  numPartitions = numPartitions,
+  connectionProperties = connectionProperties
+)
