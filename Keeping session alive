@@ -82,3 +82,42 @@ SELECT *
 FROM PLNAPP1.MATCHED_APPLICATIONS 
 WHERE APPLICATION_RECV_DT >= TO_TIMESTAMP('2022-05-09 10:39:51', 'YYYY-MM-DD HH24:MI:SS')
   AND APPLICATION_RECV_DT <= TO_TIMESTAMP('2022-05-16 00:06:17', 'YYYY-MM-DD HH24:MI:SS');
+====================
+
+val jdbcURL = "jdbc:oracle:thin:@oraasgt71-scan.nam.nsroot.net:8899/HAOTAPP25"
+val driver = "oracle.jdbc.driver.OracleDriver"
+val partitionColumn = "APPLICATION_RECV_DT"
+
+// Define string timestamp values for partitioning in Spark (these will not include TO_TIMESTAMP)
+val lowerBound = "2022-05-09 10:39:51"
+val upperBound = "2022-05-16 00:06:17"
+
+// Specify the number of partitions
+val numPartitions = 2
+
+// Define the SQL query, using TO_TIMESTAMP within the query itself for Oracle's side of processing
+val dbtable = s"""
+  (SELECT * 
+   FROM PLNAPP1.MATCHED_APPLICATIONS 
+   WHERE APPLICATION_RECV_DT >= TO_TIMESTAMP('$lowerBound', 'YYYY-MM-DD HH24:MI:SS')
+     AND APPLICATION_RECV_DT <= TO_TIMESTAMP('$upperBound', 'YYYY-MM-DD HH24:MI:SS')
+  ) query
+"""
+
+// Create a Map for the JDBC options
+val oracleReadOptions = Map(
+  "url" -> jdbcURL,
+  "driver" -> driver,
+  "dbtable" -> dbtable,        // Query passed here ensures filtering with TO_TIMESTAMP
+  "user" -> "EAPCDERPED",
+  "password" -> "mC9y3Ult",
+  "partitionColumn" -> partitionColumn,  // Spark will partition based on this
+  "lowerBound" -> lowerBound,  // Raw string value for partitioning
+  "upperBound" -> upperBound,  // Raw string value for partitioning
+  "numPartitions" -> numPartitions
+)
+
+// Load data from Oracle using Spark JDBC
+val df = spark.read.format("jdbc").options(oracleReadOptions).load()
+
+df.show()  // Show the result to verify correctness
