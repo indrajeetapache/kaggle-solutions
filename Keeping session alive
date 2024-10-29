@@ -1,5 +1,28 @@
-export AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY
-export AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY
-hadoop distcp -Dfs.s3a.logging.level=DEBUG hdfs:///source/path s3a://destination-bucket/path
+val rdd = spark.sparkContext.textFile(filePath)
 
-hadoop distcp -log /path/to/log/directory hdfs:///source/path s3a://destination-bucket/path
+// Accumulate lines in each partition and concatenate to a single string
+val rawStr = rdd.mapPartitions { iter =>
+  Iterator(iter.mkString("\n"))
+}.collect().mkString("\n")
+
+
+
+=======
+
+
+import org.apache.hadoop.fs.{FileSystem, Path}
+import scala.io.Source
+import org.apache.spark.SparkContext
+
+val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+val path = new Path(filePath)
+
+// Read the file using BufferedSource
+val rawStr = {
+  val stream = fs.open(path)
+  try {
+    Source.fromInputStream(stream).mkString
+  } finally {
+    stream.close()
+  }
+}
