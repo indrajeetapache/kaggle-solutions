@@ -242,8 +242,16 @@ def readHDFSFileLineByLine(hdfsPath: String): IO[String] = {
   }
 }
 
-// Usage
-val filePath = "hdfs://path/to/your/file"
-val result: IO[String] = readHDFSFileLineByLine(filePath)
-result.unsafeRunSync()
+import cats.effect.{Blocker, ContextShift, IO, Sync}
+import scala.concurrent.ExecutionContext
+
+implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+implicit val syncIO: Sync[IO] = IO.ioConcurrentEffect
+implicit val blocker: Blocker = Blocker.liftExecutionContext(ExecutionContext.global)
+
+val filePath: String = "hdfs://path/to/your/file"
+val rawStr: String = util.readHDFSFileLineByLine(filePath).unsafeRunSync()
+
+logger.info(s"Raw string content: $rawStr")
+
 
