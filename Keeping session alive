@@ -150,8 +150,47 @@ def readHDFSFileLineByLine(hdfsPath: String): IO[String] = {
       .flatTap(content => IO(println(s"Finished reading HDFS file at path: $hdfsPath, content size: ${content.length}")))
   }
 }
+==============
 
-// Usage
-val filePath = "hdfs://path/to/your/file"
-val result: IO[String] = readHDFSFileLineByLine(filePath)
-result.unsafeRunSync()
+
+import cats.effect.{ContextShift, IO, Resource, Sync}
+import fs2.Stream
+import fs2.io.readInputStream
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path, FSDataInputStream}
+import scala.concurrent.ExecutionContext
+
+// Define your ContextShift and Sync instances
+implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+implicit val syncIO: Sync[IO] = IO.ioConcurrentEffect
+
+def readHDFSFileLineByLine(hdfsPath: String): IO[String] = {
+  val configuration = new Configuration()
+  val fs = FileSystem.get(configuration)
+
+  // Resource for HDFS InputStream with logging
+  def inputStreamResource: Resource[IO, java.io.InputStream] = Resource.make {
+    IO {
+      println(s"Opening HDFS file at path: $hdfsPath")
+      fs.open(new Path(hdfsPath))  // fs.open returns FSDataInputStream
+    }.widen[InputStream]  // Widen to InputStream to match expected type
+  } { inputStream =>
+    IO {
+      println(s"Closing HDFS file at path: $hdfsPath")
+      inputStream.close()
+    }.handleErrorWith { ex =>
+      IO(println(s"Error closing HDFS file at path: $hdfsPath: $ex"))
+    }
+  }
+
+  inputStreamResource.use { inputStream =>
+    readInputStream(IO.pure(inputStream), chunkSize = 8192)
+      .through(fs2.text.utf8Decode)
+      .through(fs2.text.lines)
+      .intersperse("\n")
+      .compile
+      .string
+      .flatTap(content => IO(println(s"Finished reading HDFS file at path: $hdfsPath, content size: ${content.length}")))
+  }
+}
+
