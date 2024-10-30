@@ -264,3 +264,36 @@ through(fs2.text.utf8Decode): This converts the byte stream into a character str
 through(fs2.text.lines): This breaks the decoded text into lines. It further transforms the Stream[IO, String] into a Stream[IO, String] where each element represents a line of text in the file.
 .intersperse("\n"): This inserts newline characters (\n) between each line in the stream, preserving the original line structure of the file. Without this, concatenating the lines might result in a continuous string without line breaks.
 .compile.string: This operation compiles the entire Stream[IO, String] (each element representing a line) into a single String, effectively concatenating all lines in the file into one continuous string with line breaks.
+
+===========
+
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
+import scala.io.Source
+
+def readLargeFileAsSingleString(hdfsPath: String): String = {
+  val conf = new Configuration()
+  val fs = FileSystem.get(conf)
+  val path = new Path(hdfsPath)
+  val inputStream = fs.open(path)
+  
+  try {
+    val lines = Source.fromInputStream(inputStream).getLines()
+    val content = new StringBuilder
+    
+    // Append each line to the StringBuilder
+    lines.foreach { line =>
+      content.append(line).append("\n")
+    }
+    
+    // Return the entire content as a single string
+    content.toString
+  } finally {
+    inputStream.close()
+  }
+}
+
+// Usage
+val filePath = "hdfs://path/to/your/3gb_file"
+val rawStr: String = readLargeFileAsSingleString(filePath)
+println(s"File content size: ${rawStr.length}")
