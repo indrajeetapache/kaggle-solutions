@@ -26,3 +26,56 @@ val rawStr = {
     stream.close()
   }
 }
+
+
+====
+
+import cats.effect.{IO, Resource}
+import fs2.Stream
+import fs2.io.readInputStream
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
+
+// Function to read a file from HDFS line by line and return as a single String
+def readHDFSFileLineByLine(hdfsPath: String): IO[String] = {
+  val configuration = new Configuration()
+  val fs = FileSystem.get(configuration)
+
+  def inputStreamResource: Resource[IO, java.io.InputStream] = Resource.make {
+    IO(fs.open(new Path(hdfsPath)))  // Acquire InputStream from HDFS
+  } { inputStream =>
+    IO(inputStream.close()).handleErrorWith(_ => IO.unit)  // Ensure stream is closed
+  }
+
+  inputStreamResource.use { inputStream =>
+    readInputStream(IO.pure(inputStream), chunkSize = 8192, closeAfterUse = false)
+      .through(fs2.text.utf8.decode)   // Decode byte stream to text
+      .through(fs2.text.lines)         // Split the decoded text into lines
+      .intersperse("\n")               // Add line separators back (preserving line breaks)
+      .compile
+      .string                          // Concatenate all lines into a single string
+  }
+}
+
+
+<dependencies>
+    <!-- FS2 Core and IO modules -->
+    <dependency>
+        <groupId>co.fs2</groupId>
+        <artifactId>fs2-core_2.13</artifactId>
+        <version>3.2.7</version> <!-- Use the latest stable version -->
+    </dependency>
+    <dependency>
+        <groupId>co.fs2</groupId>
+        <artifactId>fs2-io_2.13</artifactId>
+        <version>3.2.7</version>
+    </dependency>
+
+    <!-- Cats Effect for IO and Resource Management -->
+    <dependency>
+        <groupId>org.typelevel</groupId>
+        <artifactId>cats-effect_2.13</artifactId>
+        <version>3.3.14</version> <!-- Use the latest stable version -->
+    </dependency>
+</dependencies>
+
