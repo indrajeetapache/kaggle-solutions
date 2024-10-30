@@ -79,3 +79,32 @@ def readHDFSFileLineByLine(hdfsPath: String): IO[String] = {
     </dependency>
 </dependencies>
 
+=================
+
+import cats.effect.{IO, Resource}
+import fs2.Stream
+import fs2.io.readInputStream
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
+
+// Function to read a file from HDFS line by line and return as a single String
+def readHDFSFileLineByLine(hdfsPath: String): IO[String] = {
+  val configuration = new Configuration()
+  val fs = FileSystem.get(configuration)
+
+  // Create an InputStream resource for managing the HDFS InputStream lifecycle
+  def inputStreamResource: Resource[IO, java.io.InputStream] = Resource.make {
+    IO(fs.open(new Path(hdfsPath)))  // Acquire InputStream from HDFS
+  } { inputStream =>
+    IO(inputStream.close()).handleErrorWith(_ => IO.unit)  // Ensure the stream is closed on release
+  }
+
+  inputStreamResource.use { inputStream =>
+    readInputStream(IO.pure(inputStream), chunkSize = 8192) // `closeAfterUse` is not required in fs2 2.x
+      .through(fs2.text.utf8Decode)  // Decode byte stream to text
+      .through(fs2.text.lines)       // Split the decoded text into lines
+      .intersperse("\n")             // Add line separators back to preserve line breaks
+      .compile
+      .string                        // Concatenate all lines into a single string
+  }
+}
