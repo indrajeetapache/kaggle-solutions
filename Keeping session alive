@@ -254,4 +254,13 @@ val rawStr: String = util.readHDFSFileLineByLine(filePath).unsafeRunSync()
 
 logger.info(s"Raw string content: $rawStr")
 
+readInputStream: This fs2 function reads data from an InputStream and converts it into a Stream[IO, Byte] (a stream of bytes).
+IO.pure(inputStream): Wraps the InputStream in an IO action to make it compatible with fs2.
+chunkSize = 8192: Specifies the size (in bytes) of each chunk to be read from the InputStream. Reading in chunks helps to control memory usage by not loading the entire file into memory at once.
+blocker = blocker: Tells readInputStream to use the Blocker, ensuring that reading from the InputStream (a blocking operation) happens on a separate thread pool.
+closeAfterUse = true: Ensures the InputStream will be closed automatically after reading, adding an extra layer of safety in resource management.
+through(fs2.text.utf8Decode): This converts the byte stream into a character stream with UTF-8 encoding. It transforms the Stream[IO, Byte] into a Stream[IO, String], where each element is a UTF-8 decoded string from the bytes.
 
+through(fs2.text.lines): This breaks the decoded text into lines. It further transforms the Stream[IO, String] into a Stream[IO, String] where each element represents a line of text in the file.
+.intersperse("\n"): This inserts newline characters (\n) between each line in the stream, preserving the original line structure of the file. Without this, concatenating the lines might result in a continuous string without line breaks.
+.compile.string: This operation compiles the entire Stream[IO, String] (each element representing a line) into a single String, effectively concatenating all lines in the file into one continuous string with line breaks.
