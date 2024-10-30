@@ -314,3 +314,21 @@ spark-submit \
   --queue root.Grmas_3170_Yarn \
   path/to/your/application.jar
 
+=======
+
+spark-submit \
+  --master yarn \
+  --deploy-mode cluster \
+  --name campgenrolletxt \
+  --driver-memory 20g \
+  --executor-memory 16g \
+  --conf spark.yarn.driver.memoryOverhead=6g \
+  --conf spark.yarn.executor.memoryOverhead=4g \
+  --conf spark.dynamicAllocation.enabled=true \
+  --conf spark.dynamicAllocation.maxExecutors=20 \
+  --conf spark.hadoop.mapreduce.input.fileinputformat.split.minsize=536870912 \
+  --conf spark.hadoop.mapreduce.input.fileinputformat.split.maxsize=1073741824 \
+  --conf "spark.executor.extraJavaOptions=-Xmx16g" \
+  --conf spark.sql.files.maxPartitionBytes=536870912 \
+  --conf spark.sql.files.openCostInBytes=134217728 \
+  <path-to-your-application-jar> <your-application-arguments>
