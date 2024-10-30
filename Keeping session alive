@@ -297,3 +297,20 @@ def readLargeFileAsSingleString(hdfsPath: String): String = {
 val filePath = "hdfs://path/to/your/3gb_file"
 val rawStr: String = readLargeFileAsSingleString(filePath)
 println(s"File content size: ${rawStr.length}")
+
+
+spark-submit \
+  --conf spark.sql.crossJoin.enabled=true \
+  --conf spark.dynamicAllocation.minExecutors=12 \
+  --conf spark.dynamicAllocation.initialExecutors=15 \
+  --conf spark.dynamicAllocation.maxExecutors=20 \
+  --conf spark.sql.parquet.compression.codec=snappy \
+  --deploy-mode cluster \
+  --driver-memory 8g \
+  --executor-memory 12g \
+  --conf spark.yarn.am.memoryOverhead=6g \
+  --conf spark.yarn.driver.memoryOverhead=3g \
+  --conf spark.yarn.executor.memoryOverhead=2g \
+  --queue root.Grmas_3170_Yarn \
+  path/to/your/application.jar
+
