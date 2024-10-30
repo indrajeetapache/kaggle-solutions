@@ -332,3 +332,7 @@ spark-submit \
   --conf spark.sql.files.maxPartitionBytes=536870912 \
   --conf spark.sql.files.openCostInBytes=134217728 \
   <path-to-your-application-jar> <your-application-arguments>
+
+
+val rdd = spark.sparkContext.textFile(filePath)
+val entireFileAsString = rdd.reduce(_ + "\n" + _)
