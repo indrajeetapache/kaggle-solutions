@@ -340,3 +340,79 @@ val entireFileAsString = coalescedRdd.aggregate("")(
   (acc, line) => if (acc.isEmpty) line else acc + "\n" + line,  // Within-partition aggregation
   (acc1, acc2) => acc1 + "\n" + acc2                             // Across-partition aggregation
 )
+============
+
+import org.apache.spark.sql.{DataFrame, SparkSession, Row}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
+
+def processCsvWithMultiDelimiter(
+    spark: SparkSession,
+    filePath: String,
+    expectedFieldCount: Int,
+    delimiters: Option[Array[Char]] = None,  // Optional: Array of delimiters
+    replacementChar: Option[Char] = None     // Optional: Replacement character
+): DataFrame = {
+
+  import spark.implicits._
+
+  // Read the file as a DataFrame with a single column "line"
+  val df = spark.read
+    .text(filePath)
+    .withColumnRenamed("value", "line")
+
+  // Step 1: Replace delimiters if provided
+  val processedDf = (delimiters, replacementChar) match {
+    case (Some(dels), Some(replaceChar)) =>
+      val delimiterPattern = dels.map(Regex.quote).mkString("|")  // e.g., "\|,|;"
+      df.withColumn("line", regexp_replace($"line", delimiterPattern, replaceChar.toString))
+
+    case _ => 
+      df  // If no multi-delimiter replacement is needed, use the DataFrame as is
+  }
+
+  // Step 2: Create a flag column to identify lines with unexpected field counts after replacement
+  val flaggedDf = processedDf.withColumn(
+    "flag",
+    when(size(split($"line", "\\" + replacementChar.getOrElse('|'))) === expectedFieldCount, 0).otherwise(1)
+  )
+
+  // Step 3: Process partitions to join lines where "flag" is 1, indicating incomplete fields
+  val joinedRdd = flaggedDf
+    .select("line", "flag")
+    .as[(String, Int)]
+    .rdd
+    .mapPartitions(partition => {
+      val buffer = scala.collection.mutable.ListBuffer[String]()
+      var currentLine = new StringBuilder
+
+      partition.foreach {
+        case (line, flag) =>
+          if (flag == 0) {
+            // If flag is 0, add the current accumulated line to buffer, then add the valid line
+            if (currentLine.nonEmpty) {
+              buffer += currentLine.toString
+              currentLine.clear()
+            }
+            buffer += line
+          } else {
+            // If flag is 1, accumulate the line until we reach a valid field count
+            if (currentLine.nonEmpty) currentLine.append("|")
+            currentLine.append(line)
+          }
+      }
+
+      // Add any remaining accumulated line
+      if (currentLine.nonEmpty) buffer += currentLine.toString
+      buffer.iterator
+    })
+
+  // Step 4: Convert joined RDD to DataFrame
+  val rowRdd = joinedRdd.map(line => Row.fromSeq(line.split("\\|", -1).toSeq))
+
+  // Define schema based on expected field count
+  val schema = StructType((1 to expectedFieldCount).map(i => StructField(s"col_$i", StringType, true)))
+
+  // Create the final cleaned DataFrame
+  spark.createDataFrame(rowRdd, schema)
+}
