@@ -336,3 +336,7 @@ spark-submit \
 
 val rdd = spark.sparkContext.textFile(filePath)
 val entireFileAsString = rdd.reduce(_ + "\n" + _)
+val entireFileAsString = coalescedRdd.aggregate("")(
+  (acc, line) => if (acc.isEmpty) line else acc + "\n" + line,  // Within-partition aggregation
+  (acc1, acc2) => acc1 + "\n" + acc2                             // Across-partition aggregation
+)
