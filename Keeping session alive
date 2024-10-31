@@ -343,18 +343,21 @@ val entireFileAsString = coalescedRdd.aggregate("")(
 ============
 
 import org.apache.spark.sql.{DataFrame, SparkSession, Row}
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.functions._
 
 def processCsvWithMultiDelimiter(
     spark: SparkSession,
     filePath: String,
-    expectedFieldCount: Int,
-    delimiters: Option[Array[Char]] = None,  // Optional: Array of delimiters
-    replacementChar: Option[Char] = None     // Optional: Replacement character
+    schema: StructType,                          // Schema provided by the user
+    delimiters: Option[Array[Char]] = None,      // Optional: Array of delimiters
+    replacementChar: Option[Char] = None         // Optional: Replacement character
 ): DataFrame = {
 
   import spark.implicits._
+
+  // Calculate expectedFieldCount from the schema
+  val expectedFieldCount = schema.fields.length
 
   // Read the file as a DataFrame with a single column "line"
   val df = spark.read
@@ -410,9 +413,6 @@ def processCsvWithMultiDelimiter(
   // Step 4: Convert joined RDD to DataFrame
   val rowRdd = joinedRdd.map(line => Row.fromSeq(line.split("\\|", -1).toSeq))
 
-  // Define schema based on expected field count
-  val schema = StructType((1 to expectedFieldCount).map(i => StructField(s"col_$i", StringType, true)))
-
-  // Create the final cleaned DataFrame
+  // Create the final cleaned DataFrame with the provided schema
   spark.createDataFrame(rowRdd, schema)
 }
