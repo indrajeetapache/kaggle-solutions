@@ -446,7 +446,6 @@ val resultDf = processCsvWithMultiDelimiter(spark, filePath, schema, delimiters,
 // Show the final cleaned DataFrame
 resultDf.show(truncate = false)
 ===================================
-
 import org.apache.spark.sql.{DataFrame, SparkSession, Row}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.expressions.Window
@@ -458,8 +457,8 @@ def processCsvWithMultiDelimiter(
     schema: StructType,
     delimiters: Array[Char],
     replacementChar: Option[Char] = None,
-    headerRowsToIgnore: Int = 0,  // Default to 0 if not provided
-    footerRowsToIgnore: Int = 0   // Default to 0 if not provided
+    headerRowsToIgnore: Option[Int] = None,      // Optional: Number of header rows to ignore
+    footerRowsToIgnore: Option[Int] = None       // Optional: Number of footer rows to ignore
 ): DataFrame = {
 
   import spark.implicits._
@@ -476,14 +475,14 @@ def processCsvWithMultiDelimiter(
   df = df.withColumn("row_num", row_number().over(windowSpec))
 
   // Remove header rows if specified
-  if (headerRowsToIgnore > 0) {
-    df = df.filter($"row_num" > headerRowsToIgnore)
+  headerRowsToIgnore.foreach { n =>
+    df = df.filter($"row_num" > n)
   }
 
   // Remove footer rows if specified
-  if (footerRowsToIgnore > 0) {
+  footerRowsToIgnore.foreach { n =>
     val totalRows = df.count() // Get the total row count only if needed
-    df = df.filter($"row_num" <= (totalRows - footerRowsToIgnore))
+    df = df.filter($"row_num" <= (totalRows - n))
   }
 
   // Drop the row number column after filtering
@@ -548,6 +547,7 @@ def processCsvWithMultiDelimiter(
 
   spark.createDataFrame(rowRdd, extendedSchema)
 }
+
 =======
 
 // Define the delimiter and optional number of rows to ignore
