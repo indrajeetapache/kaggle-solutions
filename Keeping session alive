@@ -458,8 +458,8 @@ def processCsvWithMultiDelimiter(
     schema: StructType,
     delimiters: Array[Char],
     replacementChar: Option[Char] = None,
-    headerRowsToIgnore: Option[Int] = None,
-    footerRowsToIgnore: Option[Int] = None
+    headerRowsToIgnore: Int = 0,  // Default to 0 if not provided
+    footerRowsToIgnore: Int = 0   // Default to 0 if not provided
 ): DataFrame = {
 
   import spark.implicits._
@@ -476,14 +476,14 @@ def processCsvWithMultiDelimiter(
   df = df.withColumn("row_num", row_number().over(windowSpec))
 
   // Remove header rows if specified
-  if (headerRowsToIgnore.isDefined) {
-    df = df.filter($"row_num" > headerRowsToIgnore.get)
+  if (headerRowsToIgnore > 0) {
+    df = df.filter($"row_num" > headerRowsToIgnore)
   }
 
   // Remove footer rows if specified
-  if (footerRowsToIgnore.isDefined) {
-    val totalRows = df.count() // Get the total row count
-    df = df.filter($"row_num" <= (totalRows - footerRowsToIgnore.get))
+  if (footerRowsToIgnore > 0) {
+    val totalRows = df.count() // Get the total row count only if needed
+    df = df.filter($"row_num" <= (totalRows - footerRowsToIgnore))
   }
 
   // Drop the row number column after filtering
@@ -548,3 +548,10 @@ def processCsvWithMultiDelimiter(
 
   spark.createDataFrame(rowRdd, extendedSchema)
 }
+=======
+
+// Define the delimiter and optional number of rows to ignore
+val delimiters = Array('|')             // Specify the delimiters (e.g., '|')
+val replacementChar = Some('|')          // Specify the replacement character if needed (optional)
+val headerRowsToIgnore = Some(2)         // Specify the number of header rows to ignore (optional)
+val footerRowsToIgnore = Some(3)         // Specify the number of footer rows to ignore (optional)
