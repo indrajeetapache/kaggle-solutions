@@ -464,3 +464,114 @@ val resultDf = processCsvWithMultiDelimiter(
 
 // Display the result
 resultDf.show(truncate = false)
+=======
+
+import org.apache.spark.sql.{DataFrame, SparkSession, Row}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+import java.nio.file.Paths
+
+def processCsvWithMultiDelimiter(
+    spark: SparkSession,
+    filePath: String,
+    schema: StructType,
+    delimiters: Array[String], // Change to Array[String] for multi-character delimiters
+    replacementChar: Option[Char] = None,
+    headerRowsToIgnore: Option[Int] = None,
+    footerRowsToIgnore: Option[Int] = None
+): DataFrame = {
+
+  import spark.implicits._
+
+  // Read the file with the option to capture corrupt records in a default column "_corrupt_record"
+  val rawDataFrame = spark.read
+    .option("header", "true")
+    .option("delimiter", delimiters.head) // Use the initial delimiter for basic structure reading
+    .option("columnNameOfCorruptRecord", "_corrupt_record") // Capture corrupt records automatically
+    .schema(schema)
+    .csv(filePath)
+    .withColumn("row_number", row_number().over(Window.orderBy(lit(1)))) // Assign row numbers
+
+  // Remove header rows if specified
+  val dataFrameWithoutHeader = headerRowsToIgnore match {
+    case Some(n) => rawDataFrame.filter($"row_number" > n)
+    case None => rawDataFrame
+  }
+
+  // Remove footer rows if specified
+  val dataFrameWithoutHeaderAndFooter = footerRowsToIgnore match {
+    case Some(n) =>
+      val totalRowCount = dataFrameWithoutHeader.count()
+      dataFrameWithoutHeader.filter($"row_number" <= (totalRowCount - n))
+    case None => dataFrameWithoutHeader
+  }
+
+  // Drop the row number column after filtering
+  val dataFrameFiltered = dataFrameWithoutHeaderAndFooter.drop("row_number")
+
+  // Step 1: Replace delimiters using either replacementChar or the first delimiter in delimiters
+  val effectiveReplacementChar = replacementChar.getOrElse('|')
+  val delimiterPattern = delimiters.map(Regex.quote).mkString("|")
+
+  val processedDataFrame = dataFrameFiltered.withColumn(
+    "line",
+    regexp_replace($"line", delimiterPattern, effectiveReplacementChar.toString)
+  )
+
+  // Step 2: Create a flag column to identify lines with unexpected field counts after replacement
+  val flaggedDataFrame = processedDataFrame.withColumn(
+    "flag",
+    when(size(split($"line", "\\" + effectiveReplacementChar)) === schema.fields.length, 0).otherwise(1)
+  )
+
+  // Step 3: Process partitions to join lines where "flag" is 1, indicating incomplete fields
+  val processedRdd = flaggedDataFrame
+    .select("line", "flag", "_corrupt_record") // Include the corrupt record column
+    .as[(String, Int, String)]
+    .rdd
+    .mapPartitions { partition =>
+      val buffer = scala.collection.mutable.ListBuffer[Row]()
+      var currentLineBuilder = new StringBuilder
+
+      partition.foreach {
+        case (line, flag, corruptRecord) =>
+          if (flag == 0 && corruptRecord == null) {
+            if (currentLineBuilder.nonEmpty) {
+              buffer += Row(currentLineBuilder.toString, null)
+              currentLineBuilder.clear()
+            }
+            buffer += Row(line, null)
+          } else if (corruptRecord != null) {
+            buffer += Row(null, corruptRecord) // Capture corrupt records directly
+          } else {
+            if (currentLineBuilder.nonEmpty) currentLineBuilder.append(effectiveReplacementChar)
+            currentLineBuilder.append(line)
+          }
+      }
+
+      if (currentLineBuilder.nonEmpty) {
+        val fields = currentLineBuilder.toString.split("\\" + effectiveReplacementChar, -1)
+        if (fields.length == schema.fields.length) {
+          buffer += Row(currentLineBuilder.toString, null)
+        } else {
+          buffer += Row(null, currentLineBuilder.toString)
+        }
+      }
+      buffer.iterator
+    }
+
+  val rowRdd = processedRdd.map {
+    case Row(line: String, null) =>
+      Row.fromSeq(line.split("\\" + effectiveReplacementChar, -1).toSeq ++ Seq(null, sourceFileName, sourceFilePath))
+    case Row(null, corruptLine: String) =>
+      Row.fromSeq(Seq.fill(schema.fields.length)(null) ++ Seq(corruptLine, sourceFileName, sourceFilePath))
+  }
+
+  // Extend schema without manually adding a corrupt record field
+  val extendedSchema = StructType(schema.fields ++ Seq(
+    StructField("source_file_name", StringType, true),
+    StructField("source_file_path", StringType, true)
+  ))
+
+  spark.createDataFrame(rowRdd, extendedSchema)
+}
