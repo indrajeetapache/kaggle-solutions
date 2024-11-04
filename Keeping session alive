@@ -581,3 +581,16 @@ def processCsvWithMultiDelimiter(
 
   spark.createDataFrame(rowRdd, extendedSchema)
 }
+=====
+
+val replacementChar = optionMap.get("sep").map(_.head) // Get the character from the config as Option[Char]
+
+val resultDf = processCsvWithMultiDelimiter(
+  spark,
+  filePath,
+  schema,
+  delimiters = sep.split("").filter(_.nonEmpty),  // Convert sep string into Array[String]
+  replacementChar = replacementChar,              // Pass the replacementChar directly from the config
+  headerRowsToIgnore = Some(2),                   // Optional: Specify number of header rows to ignore
+  footerRowsToIgnore = Some(3)                    // Optional: Specify number of footer rows to ignore
+)
