@@ -579,7 +579,17 @@ def processCsvWithMultiDelimiter(
     StructField("source_file_path", StringType, true)
   ))
 
-  spark.createDataFrame(rowRdd, extendedSchema)
+   // Add source file name and path columns
+  resultDf = resultDf
+    .withColumn("source_file_name", lit(sourceFileName))
+    .withColumn("source_file_path", lit(sourceFilePath))
+
+  // Drop the _corrupt_record column if it doesn't contain any records
+  if (resultDf.columns.contains("corrupt_record") && resultDf.filter($"corrupt_record".isNotNull).count() == 0) {
+    resultDf = resultDf.drop("corrupt_record")
+  }
+
+  resultDf
 }
 =====
 
