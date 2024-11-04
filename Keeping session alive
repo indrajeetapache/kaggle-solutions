@@ -433,3 +433,15 @@ def processCsvWithMultiDelimiter(
   // Create the final cleaned DataFrame
   spark.createDataFrame(rowRdd, extendedSchema)
 }
+// Path to the input file
+val filePath = "path/to/your/file.csv"
+
+// Define the delimiters and replacement character
+val delimiters = Array('|', '|')  // Delimiter is "||"
+val replacementChar = Some('|')    // Replacement character is "|"
+
+// Call the function with these parameters
+val resultDf = processCsvWithMultiDelimiter(spark, filePath, schema, delimiters, replacementChar)
+
+// Show the final cleaned DataFrame
+resultDf.show(truncate = false)
