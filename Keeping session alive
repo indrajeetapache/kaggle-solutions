@@ -680,13 +680,12 @@ def processCsvWithMultiDelimiter(
 
 val filteredDf = combinedDfWithFlag
   .select(
-    (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag"): _*
+    (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag", $"line"): _*
   )
   .withColumn("_corrupt_record", when($"flag" === 1, $"line").otherwise(null))
-  .drop("flag") // Drop the flag column if it is no longer needed
+  .drop("flag", "line") // Drop the flag and line columns if they are no longer needed
   .withColumn("source_file_name", lit(sourceFileName))
   .withColumn("source_file_path", lit(sourceFilePath))
-
   // Drop the _corrupt_record column if it doesn't contain any records
   if (filteredDf.filter($"_corrupt_record".isNotNull).count() == 0) {
     filteredDf.drop("_corrupt_record")
