@@ -412,8 +412,12 @@ def processCsvWithMultiDelimiter(
 
   // Step 4: Filter out rows that are part of the next line's combination to avoid duplication
   val combinedDfWithFlag = combinedDf
-    .filter($"is_combined_part" === false)
-    .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar))
+  .filter(
+    ($"is_combined" === true && $"next_flag" === 0) || // Keep the row where the combination is successful
+    ($"is_combined" === false && $"flag" === 0)       // Keep rows that are standalone valid records
+  )
+  .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar))
+
 
   val filteredDf = combinedDfWithFlag
     .select(
