@@ -679,17 +679,24 @@ def processCsvWithMultiDelimiter(
   .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar))
 
 val filteredDf = combinedDfWithFlag
-  .select(
-    (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag", $"line"): _*
-  )
-  .withColumn("_corrupt_record", when($"flag" === 1, $"line").otherwise(null))
-  .drop("flag", "line") // Drop the flag and line columns if they are no longer needed
-  .withColumn("source_file_name", lit(sourceFileName))
-  .withColumn("source_file_path", lit(sourceFilePath))
-  // Drop the _corrupt_record column if it doesn't contain any records
-  if (filteredDf.filter($"_corrupt_record".isNotNull).count() == 0) {
-    filteredDf.drop("_corrupt_record")
+    .select(
+      (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag", $"line"): _*
+    )
+    .withColumn("_corrupt_record", when($"flag" === 1, $"line").otherwise(null))
+    .withColumn("validation_flag", when($"_corrupt_record".isNotNull, lit("corrupt")).otherwise(lit("valid")))
+    .drop("flag", "line") // Drop the flag and line columns if they are no longer needed
+    .withColumn("source_file_name", lit(sourceFileName))
+    .withColumn("source_file_path", lit(sourceFilePath))
+
+  // Optional: Check if there are any corrupt records (for logging or reporting)
+  val corruptRecordsDf = filteredDf.filter($"validation_flag" === "corrupt")
+  val hasCorruptRecords = corruptRecordsDf.take(1).nonEmpty
+  if (hasCorruptRecords) {
+    println("There are corrupt records in the DataFrame.")
   } else {
-    filteredDf
+    println("No corrupt records found.")
   }
+
+  // Return the processed DataFrame as the final output
+  filteredDf
 }
