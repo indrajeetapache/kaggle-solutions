@@ -404,26 +404,26 @@ def processCsvWithMultiDelimiter(
     .withColumn("next_flag", lead("flag", 1).over(windowSpec))
     .withColumn(
       "combined_line",
-      when($"flag" === 1, concat_ws(effectiveReplacementChar.toString, $"line", $"next_line"))
+      when($"flag" === 1 && $"next_flag" === 0, concat_ws(effectiveReplacementChar.toString, $"line", $"next_line"))
         .otherwise($"line")
     )
     .withColumn("is_combined", $"flag" === 1 && $"next_flag" === 0)
+    .withColumn("is_combined_part", when($"flag" === 1 && $"next_flag" === 0, lit(true)).otherwise(lit(false)))
 
-  // Filter out rows that are part of the next line's combination to avoid duplication
+  // Step 4: Filter out rows that are part of the next line's combination to avoid duplication
   val combinedDfWithFlag = combinedDf
-    .filter($"is_combined" === false || $"flag" === 0)
+    .filter($"is_combined_part" === false)
     .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar))
 
   val filteredDf = combinedDfWithFlag
-  .select(
-    (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag", $"line", $"is_combined"): _*
-  )
-  .withColumn("_corrupt_record", when($"flag" === 1 && !$"is_combined", $"line").otherwise(null))
-  .withColumn("validation_flag", when($"_corrupt_record".isNotNull, lit("corrupt")).otherwise(lit("valid")))
-  .drop("flag", "line", "is_combined") // Drop the flag, line, and is_combined columns if they are no longer needed
-  .withColumn("source_file_name", lit(sourceFileName))
-  .withColumn("source_file_path", lit(sourceFilePath))
-
+    .select(
+      (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag", $"line", $"is_combined"): _*
+    )
+    .withColumn("_corrupt_record", when($"flag" === 1 && !$"is_combined", $"line").otherwise(null))
+    .withColumn("validation_flag", when($"_corrupt_record".isNotNull, lit("corrupt")).otherwise(lit("valid")))
+    .drop("flag", "line", "is_combined") // Drop the flag, line, and is_combined columns if they are no longer needed
+    .withColumn("source_file_name", lit(sourceFileName))
+    .withColumn("source_file_path", lit(sourceFilePath))
 
   // Optional: Check if there are any corrupt records (for logging or reporting)
   val corruptRecordsDf = filteredDf.filter($"validation_flag" === "corrupt")
@@ -437,3 +437,5 @@ def processCsvWithMultiDelimiter(
   // Return the processed DataFrame as the final output
   filteredDf
 }
+
+
