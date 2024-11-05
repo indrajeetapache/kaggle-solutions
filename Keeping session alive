@@ -632,7 +632,7 @@ def processCsvWithMultiDelimiter(
   var rawDataFrame = spark.read
     .text(filePath)
     .withColumnRenamed("value", "line")
-    .withColumn("row_number", row_number().over(Window.orderBy(lit(1)))) // Assign row numbers
+    .withColumn("unique_id", monotonically_increasing_id()) // Assign unique IDs // Assign row numbers
 
   // Remove header rows if specified
   if (headerRowsToIgnore.isDefined) {
