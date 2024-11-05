@@ -674,15 +674,18 @@ def processCsvWithMultiDelimiter(
     .withColumn("is_last_combined", lag("flag", 1).over(windowSpec) === 1 && $"flag" === 0)
 
   // Filter out rows that are part of the next line's combination to avoid duplication
-  val filteredDf = combinedDf
-    .filter($"is_last_combined" === false || $"flag" === 0)
-    .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar, -1))
-    .select(
-      (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)): _*
-    )
-    .withColumn("_corrupt_record", when($"flag" === 1, $"line").otherwise(null))
-    .withColumn("source_file_name", lit(sourceFileName))
-    .withColumn("source_file_path", lit(sourceFilePath))
+  val combinedDfWithFlag = combinedDf
+  .filter($"is_last_combined" === false || $"flag" === 0)
+  .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar))
+
+val filteredDf = combinedDfWithFlag
+  .select(
+    (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)) ++ Seq($"flag"): _*
+  )
+  .withColumn("_corrupt_record", when($"flag" === 1, $"line").otherwise(null))
+  .drop("flag") // Drop the flag column if it is no longer needed
+  .withColumn("source_file_name", lit(sourceFileName))
+  .withColumn("source_file_path", lit(sourceFilePath))
 
   // Drop the _corrupt_record column if it doesn't contain any records
   if (filteredDf.filter($"_corrupt_record".isNotNull).count() == 0) {
