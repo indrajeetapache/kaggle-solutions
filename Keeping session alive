@@ -604,3 +604,90 @@ val resultDf = processCsvWithMultiDelimiter(
   headerRowsToIgnore = Some(2),                   // Optional: Specify number of header rows to ignore
   footerRowsToIgnore = Some(3)                    // Optional: Specify number of footer rows to ignore
 )
+=====================================
+=====================================
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.types._
+import java.nio.file.Paths
+
+def processCsvWithMultiDelimiter(
+    spark: SparkSession,
+    filePath: String,
+    schema: StructType,
+    delimiters: Array[Char],
+    replacementChar: Option[Char] = None,
+    headerRowsToIgnore: Option[Int] = None,
+    footerRowsToIgnore: Option[Int] = None
+): DataFrame = {
+
+  import spark.implicits._
+
+  // Get the source file name and path
+  val sourceFileName = Paths.get(filePath).getFileName.toString
+  val sourceFilePath = filePath
+
+  // Read the file as a DataFrame with a single column "line" and add row numbers
+  var rawDataFrame = spark.read
+    .text(filePath)
+    .withColumnRenamed("value", "line")
+    .withColumn("row_number", row_number().over(Window.orderBy(lit(1)))) // Assign row numbers
+
+  // Remove header rows if specified
+  if (headerRowsToIgnore.isDefined) {
+    rawDataFrame = rawDataFrame.filter($"row_number" > headerRowsToIgnore.get)
+  }
+
+  // Remove footer rows if specified
+  if (footerRowsToIgnore.isDefined) {
+    val totalRowCount = rawDataFrame.count()
+    rawDataFrame = rawDataFrame.filter($"row_number" <= (totalRowCount - footerRowsToIgnore.get))
+  }
+
+  // Step 1: Replace delimiters using either replacementChar or the first delimiter in delimiters
+  val effectiveReplacementChar = replacementChar.getOrElse(delimiters.head)
+  val delimiterPattern = delimiters.map(Regex.quote).mkString("|")
+
+  val processedDataFrame = rawDataFrame.withColumn(
+    "line",
+    regexp_replace($"line", delimiterPattern, effectiveReplacementChar.toString)
+  )
+
+  // Step 2: Create a flag column to identify lines with unexpected field counts after replacement
+  val flaggedDataFrame = processedDataFrame.withColumn(
+    "flag",
+    when(size(split($"line", "\\" + effectiveReplacementChar)) === schema.fields.length, 0).otherwise(1)
+  )
+
+  // Step 3: Use lead and lag with row_number to combine lines where "flag" is 1
+  val windowSpec = Window.orderBy("row_number")
+
+  val combinedDf = flaggedDataFrame
+    .withColumn("next_line", lead("line", 1).over(windowSpec))
+    .withColumn("next_flag", lead("flag", 1).over(windowSpec))
+    .withColumn(
+      "combined_line",
+      when($"flag" === 1, concat_ws(effectiveReplacementChar.toString, $"line", $"next_line"))
+        .otherwise($"line")
+    )
+    .withColumn("is_last_combined", lag("flag", 1).over(windowSpec) === 1 && $"flag" === 0)
+
+  // Filter out rows that are part of the next line's combination to avoid duplication
+  val filteredDf = combinedDf
+    .filter($"is_last_combined" === false || $"flag" === 0)
+    .withColumn("split_line", split($"combined_line", "\\" + effectiveReplacementChar, -1))
+    .select(
+      (0 until schema.fields.length).map(i => $"split_line"(i).as(schema.fields(i).name)): _*
+    )
+    .withColumn("_corrupt_record", when($"flag" === 1, $"line").otherwise(null))
+    .withColumn("source_file_name", lit(sourceFileName))
+    .withColumn("source_file_path", lit(sourceFilePath))
+
+  // Drop the _corrupt_record column if it doesn't contain any records
+  if (filteredDf.filter($"_corrupt_record".isNotNull).count() == 0) {
+    filteredDf.drop("_corrupt_record")
+  } else {
+    filteredDf
+  }
+}
