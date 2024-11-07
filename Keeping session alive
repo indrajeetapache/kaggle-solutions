@@ -1,3 +1,61 @@
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import java.util.zip.{GZIPOutputStream, DeflaterOutputStream}
+import java.io.{ByteArrayOutputStream, OutputStream}
+import org.apache.spark.sql.types.BinaryType
+import org.xerial.snappy.Snappy
+import com.github.luben.zstd.Zstd  // Import for ZSTD compression
+
+// Define a function to get the appropriate compression output stream
+def getCompressionStream(bos: ByteArrayOutputStream, method: String): OutputStream = method match {
+  case "gzip" => new GZIPOutputStream(bos)
+  case "zlib" => new DeflaterOutputStream(bos)
+  case "snappy" => new ByteArrayOutputStream() // Snappy compression is handled differently
+  case "zstd" => new ByteArrayOutputStream()    // ZSTD compression handled differently
+  case _ => throw new IllegalArgumentException(s"Unsupported compression method: $method")
+}
+
+// Define the UDF generator for compressing the column
+def createCompressionUDF(method: String) = udf((input: String) => {
+  if (input == null) {
+    null
+  } else {
+    val bos = new ByteArrayOutputStream()
+    
+    // Handle Snappy and ZSTD differently since they do not use an OutputStream directly
+    method.toLowerCase match {
+      case "snappy" =>
+        Snappy.compress(input.getBytes("UTF-8"))
+      case "zstd" =>
+        Zstd.compress(input.getBytes("UTF-8"))
+      case _ =>
+        val compressionStream = getCompressionStream(bos, method)
+        compressionStream.write(input.getBytes("UTF-8"))
+        compressionStream.close()
+        bos.toByteArray
+    }
+  }
+}, BinaryType)
+
+// Define a function to compress a specified column with a chosen method
+def compressColumn(df: DataFrame, columnName: String, method: String)(implicit spark: SparkSession): DataFrame = {
+  val compressUDF = createCompressionUDF(method.toLowerCase)
+  df.withColumn(s"${columnName}_compressed", compressUDF(col(columnName)))
+}
+
+// Usage example:
+// Compress the "col1" column using GZIP, Snappy, ZLIB, or ZSTD
+val method = "gzip"  // Choose "gzip", "snappy", "zlib", or "zstd"
+val compressedDF = compressColumn(df, "col1", method)
+
+// Write the DataFrame to Snowflake
+compressedDF.write
+  .format("snowflake")
+  .options(snowflakeOptions)  // Add your Snowflake connection options here
+  .option("dbtable", "your_table_name")
+  .save()
+
+=================
 import org.apache.spark.sql.functions._
 import java.util.zip.{GZIPOutputStream, DeflaterOutputStream}
 import java.io.ByteArrayOutputStream
