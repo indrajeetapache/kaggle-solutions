@@ -1,79 +1,53 @@
-import org.apache.spark.sql.functions._
-import java.util.zip.{GZIPOutputStream, DeflaterOutputStream}
-import java.io.ByteArrayOutputStream
-import org.xerial.snappy.Snappy
-import org.apache.spark.sql.types.BinaryType
-
-// Define a function to apply the desired compression
-def compressColumnData(input: String, method: String): Array[Byte] = {
-  if (input == null) {
-    null
-  } else {
-    val bos = new ByteArrayOutputStream()
-    method.toLowerCase match {
-      case "gzip" =>
-        val gzip = new GZIPOutputStream(bos)
-        gzip.write(input.getBytes("UTF-8"))
-        gzip.close()
-      case "zlib" =>
-        val zlib = new DeflaterOutputStream(bos)
-        zlib.write(input.getBytes("UTF-8"))
-        zlib.close()
-      case "snappy" =>
-        return Snappy.compress(input.getBytes("UTF-8"))
-      case _ =>
-        throw new IllegalArgumentException(s"Unsupported compression method: $method")
-    }
-    bos.toByteArray
-  }
-}
-
-// Define a UDF to apply this function to a column
-def createCompressionUDF(method: String) = udf((input: String) => compressColumnData(input, method), BinaryType)
-
-======
-
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions._
+import org.apache.spark.sql.functions.udf
 import java.util.zip.{GZIPOutputStream, DeflaterOutputStream}
 import java.io.{ByteArrayOutputStream, OutputStream}
 import org.apache.spark.sql.types.BinaryType
 import org.xerial.snappy.Snappy
 import com.github.luben.zstd.Zstd  // Import for ZSTD compression
 
-// Define a function to get the appropriate compression output stream
-def getCompressionStream(bos: ByteArrayOutputStream, method: String): OutputStream = method match {
-  case "gzip" => new GZIPOutputStream(bos)
-  case "zlib" => new DeflaterOutputStream(bos)
-  case "snappy" => new ByteArrayOutputStream() // Snappy compression is handled differently
-  case "zstd" => new ByteArrayOutputStream()    // ZSTD compression handled differently
-  case _ => throw new IllegalArgumentException(s"Unsupported compression method: $method")
+// Define separate functions for each compression type
+def gzipCompress(input: String): Array[Byte] = {
+  val bos = new ByteArrayOutputStream()
+  val gzip = new GZIPOutputStream(bos)
+  gzip.write(input.getBytes("UTF-8"))
+  gzip.close()
+  bos.toByteArray
 }
 
-// Define the compression function with explicit types
+def zlibCompress(input: String): Array[Byte] = {
+  val bos = new ByteArrayOutputStream()
+  val zlib = new DeflaterOutputStream(bos)
+  zlib.write(input.getBytes("UTF-8"))
+  zlib.close()
+  bos.toByteArray
+}
+
+def snappyCompress(input: String): Array[Byte] = {
+  Snappy.compress(input.getBytes("UTF-8"))
+}
+
+def zstdCompress(input: String): Array[Byte] = {
+  Zstd.compress(input.getBytes("UTF-8"))
+}
+
+// Main compression function that calls the appropriate compression method
 def compressColumnData(input: String, method: String): Array[Byte] = {
   if (input == null) {
     null
   } else {
-    val bos = new ByteArrayOutputStream()
-    
     method.toLowerCase match {
-      case "snappy" =>
-        Snappy.compress(input.getBytes("UTF-8"))
-      case "zstd" =>
-        Zstd.compress(input.getBytes("UTF-8"))
-      case _ =>
-        val compressionStream = getCompressionStream(bos, method)
-        compressionStream.write(input.getBytes("UTF-8"))
-        compressionStream.close()
-        bos.toByteArray
+      case "gzip" => gzipCompress(input)
+      case "zlib" => zlibCompress(input)
+      case "snappy" => snappyCompress(input)
+      case "zstd" => zstdCompress(input)
+      case _ => throw new IllegalArgumentException(s"Unsupported compression method: $method")
     }
   }
 }
 
 // Define a typed UDF for compressing the column
-def createCompressionUDF(method: String): UserDefinedFunction = {
+def createCompressionUDF(method: String) = {
   udf((input: String) => compressColumnData(input, method), BinaryType)
 }
 
@@ -87,7 +61,7 @@ def compressColumn(df: DataFrame, columnName: String, method: String)(implicit s
 def main(args: Array[String]): Unit = {
   implicit val spark: SparkSession = SparkSession.builder()
     .appName("Compression Example")
-    .master("yarn")  // or "local[*]" for testing locally
+    .master("local[*]")  // or "yarn" for cluster mode
     .getOrCreate()
 
   import spark.implicits._
@@ -97,34 +71,7 @@ def main(args: Array[String]): Unit = {
     ("Alice", "New York"),
     ("Bob", "Los Angeles"),
     ("Charlie", "Chicago")
-  )
 
-  val df = data.toDF("Name", "Location")
-
-  // Compress the "Location" column using "gzip", "zstd", "snappy", or "zlib"
-  val method = "gzip"  // Choose the desired compression method
-  val compressedDF = compressColumn(df, "Location", method)
-
-  // Show the resulting DataFrame with the compressed column
-  compressedDF.show()
-
-  // Write the DataFrame to Snowflake
-  val snowflakeOptions = Map(
-    "sfURL" -> "your_snowflake_account.snowflakecomputing.com",
-    "sfUser" -> "your_username",
-    "sfPassword" -> "your_password",
-    "sfDatabase" -> "your_database",
-    "sfSchema" -> "your_schema",
-    "sfWarehouse" -> "your_warehouse",
-    "sfRole" -> "your_role"
-  )
-
-  compressedDF.write
-    .format("snowflake")
-    .options(snowflakeOptions)  // Add your Snowflake connection options here
-    .option("dbtable", "your_table_name")
-    .save()
-}
 ========
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
