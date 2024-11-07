@@ -50,26 +50,41 @@ val compressedColumnDf = dfWithId.select("row_id", columnToCompress)
 
 // Save this compressed column DataFrame with file compression
 compressedColumnDf.write
-  .mode("overwrite")
-  .option("compression", "gzip")  // specify your compression method here
-  .parquet("/path/to/compressed_column")
+import org.apache.spark.sql.functions._
+import java.util.zip.{GZIPOutputStream, DeflaterOutputStream}
+import java.io.ByteArrayOutputStream
+import org.xerial.snappy.Snappy
+import com.github.luben.zstd.Zstd  // Import for ZSTD compression
+import org.apache.spark.sql.types.BinaryType
 
-// Step 3: Read back the compressed column DataFrame
-val compressedColumnDfRead = spark.read
-  .parquet("/path/to/compressed_column")
+// Define a function to apply the desired compression
+def compressColumnData(input: String, method: String): Array[Byte] = {
+  if (input == null) {
+    null
+  } else {
+    val bos = new ByteArrayOutputStream()
+    method.toLowerCase match {
+      case "gzip" =>
+        val gzip = new GZIPOutputStream(bos)
+        gzip.write(input.getBytes("UTF-8"))
+        gzip.close()
+      case "zlib" =>
+        val zlib = new DeflaterOutputStream(bos)
+        zlib.write(input.getBytes("UTF-8"))
+        zlib.close()
+      case "snappy" =>
+        return Snappy.compress(input.getBytes("UTF-8"))
+      case "zstd" =>
+        return Zstd.compress(input.getBytes("UTF-8"))  // ZSTD compression
+      case _ =>
+        throw new IllegalArgumentException(s"Unsupported compression method: $method")
+    }
+    bos.toByteArray
+  }
+}
 
-// Step 4: Join the compressed column back with the original DataFrame
-val finalDf = dfWithId.join(compressedColumnDfRead, "row_id")
-
-// Drop row_id if it’s not needed anymore
-val finalDfWithoutRowId = finalDf.drop("row_id")
-
-// Step 5: Write the final DataFrame to Snowflake
-finalDfWithoutRowId.write
-  .format("snowflake")
-  .options(snowflakeOptions)  // Add your Snowflake connection options here
-  .option("dbtable", "your_snowflake_table")
-  .save()
+// Define a UDF to apply this function to a column
+def createCompressionUDF(method: String) = udf((input: String) => compressColumnData(input, method), BinaryType)
 
 ==============
 
