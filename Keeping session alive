@@ -1,3 +1,38 @@
+import org.apache.spark.sql.functions._
+import java.util.zip.{GZIPOutputStream, DeflaterOutputStream}
+import java.io.ByteArrayOutputStream
+import org.xerial.snappy.Snappy
+import org.apache.spark.sql.types.BinaryType
+
+// Define a function to apply the desired compression
+def compressColumnData(input: String, method: String): Array[Byte] = {
+  if (input == null) {
+    null
+  } else {
+    val bos = new ByteArrayOutputStream()
+    method.toLowerCase match {
+      case "gzip" =>
+        val gzip = new GZIPOutputStream(bos)
+        gzip.write(input.getBytes("UTF-8"))
+        gzip.close()
+      case "zlib" =>
+        val zlib = new DeflaterOutputStream(bos)
+        zlib.write(input.getBytes("UTF-8"))
+        zlib.close()
+      case "snappy" =>
+        return Snappy.compress(input.getBytes("UTF-8"))
+      case _ =>
+        throw new IllegalArgumentException(s"Unsupported compression method: $method")
+    }
+    bos.toByteArray
+  }
+}
+
+// Define a UDF to apply this function to a column
+def createCompressionUDF(method: String) = udf((input: String) => compressColumnData(input, method), BinaryType)
+
+======
+
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
