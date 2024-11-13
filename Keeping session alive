@@ -1,1 +1,2 @@
-
+--conf spark.sql.broadcastTimeout=1200 \
+  --conf spark.driver.maxResultSize=4g \
