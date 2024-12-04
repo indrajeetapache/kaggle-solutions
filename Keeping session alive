@@ -1,3 +1,9 @@
-// Handle scientific notation and null values
-val lowerBound = if (rawLowerBound != null && rawLowerBound.matches("^-?\\d+(\\.\\d+)?[Ee][+-]?\\d+$")) "0" else rawLowerBound
-val upperBound = if (rawUpperBound != null && rawUpperBound.matches("^-?\\d+(\\.\\d+)?[Ee][+-]?\\d+$")) "0" else rawUpperBound
+// Function to normalize the value: keep as a string if it matches an Oracle date format, otherwise convert to Long
+def normalizeValue(value: String): Any = {
+  val oracleDatePattern = "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2}:\\d{2})?$" // Matches YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+  if (value != null && value.matches(oracleDatePattern)) {
+    value // Keep as is if it matches Oracle date format
+  } else {
+    BigDecimal(value).setScale(0, BigDecimal.RoundingMode.DOWN).toLong // Convert to Long for numeric values
+  }
+}
