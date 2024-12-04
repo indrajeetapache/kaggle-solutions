@@ -1,1 +1,3 @@
-
+// Handle scientific notation and null values
+val lowerBound = if (rawLowerBound != null && rawLowerBound.matches("^-?\\d+(\\.\\d+)?[Ee][+-]?\\d+$")) "0" else rawLowerBound
+val upperBound = if (rawUpperBound != null && rawUpperBound.matches("^-?\\d+(\\.\\d+)?[Ee][+-]?\\d+$")) "0" else rawUpperBound
