@@ -1,25 +1,38 @@
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.expressions.Window
 
-// Read the file as a DataFrame
-val rawDataFrame = spark.read.text(filePath)
-  .withColumnRenamed("value", "line")
-  .withColumn("unique_id", monotonically_increasing_id())
-
-// Ignore header and footer rows based on configuration
-val headerRowsToIgnore = 2 // Set this value as per your requirement
-val footerRowsToIgnore = 2 // Set this value as per your requirement
-val totalRows = rawDataFrame.count()
-
+// Processing logic in one shot
 val processedDataFrame = rawDataFrame
-  .filter(col("unique_id") >= lit(headerRowsToIgnore)) // Filter out header rows
-  .filter(col("unique_id") < lit(totalRows - footerRowsToIgnore)) // Filter out footer rows
+  .filter(col("unique_id") >= lit(headerRowsToIgnore)) // Filter header rows
+  .filter(col("unique_id") < lit(totalRows - footerRowsToIgnore)) // Filter footer rows
   .withColumn(
     "line",
-    regexp_replace(col("line"), delimiterPattern, effectiveReplacementChar.toString) // Replace characters
+    when(
+      lit(isMultiDelimiter), // Check if isMultiDelimiter is true
+      regexp_replace(col("line"), delimiterPattern, effectiveReplacementChar.toString) // Replace with effectiveReplacementChar
+    ).otherwise(
+      regexp_replace(col("line"), delimiterPattern, delimiterPattern) // Replace with same delimiterPattern
+    )
   )
-  .drop("unique_id") // Drop the unique_id column if not needed
+  .withColumn("isMultiDelimiter", lit(isMultiDelimiter)) // Add column to indicate if multi-delimiter is used
+  .drop("unique_id") // Drop unique_id column if not needed
 
-// Proceed with further processing
-processedDataFrame.show(false)
+// Define the schema and split logic
+val delimiter = optionsMap("delimiter")
+val columnNames = dfSchema.fieldNames.filter(_ != "_corrupt_record")
 
+val finalDataFrame = processedDataFrame
+  .withColumn("split", split(col("line"), delimiter)) // Split line into array based on delimiter
+  .select((0 until columnNames.length).map(i => col("split").getItem(i).alias(columnNames(i))): _*) // Map array to columns
+  .withColumn("_corrupt_record", lit(null).cast(StringType)) // Add corrupt column as null
+  .withColumn(
+    "source_file_name",
+    substring_index(input_file_name(), "/", -1) // Extract file name
+  )
+  .withColumn(
+    "source_file_name_with_path",
+    input_file_name() // Extract full file path
+  )
+
+// Show and print schema of the final DataFrame
+finalDataFrame.show(false)
+finalDataFrame.printSchema()
