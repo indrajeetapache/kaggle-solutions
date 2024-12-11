@@ -1,1 +1,25 @@
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+
+// Read the file as a DataFrame
+val rawDataFrame = spark.read.text(filePath)
+  .withColumnRenamed("value", "line")
+  .withColumn("unique_id", monotonically_increasing_id())
+
+// Ignore header and footer rows based on configuration
+val headerRowsToIgnore = 2 // Set this value as per your requirement
+val footerRowsToIgnore = 2 // Set this value as per your requirement
+val totalRows = rawDataFrame.count()
+
+val processedDataFrame = rawDataFrame
+  .filter(col("unique_id") >= lit(headerRowsToIgnore)) // Filter out header rows
+  .filter(col("unique_id") < lit(totalRows - footerRowsToIgnore)) // Filter out footer rows
+  .withColumn(
+    "line",
+    regexp_replace(col("line"), delimiterPattern, effectiveReplacementChar.toString) // Replace characters
+  )
+  .drop("unique_id") // Drop the unique_id column if not needed
+
+// Proceed with further processing
+processedDataFrame.show(false)
 
