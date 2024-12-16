@@ -19,6 +19,8 @@ config_file_path = "config/framework.conf"
 config_data = load_config(config_file_path)
 logger.info(f"Configuration Loaded: {config_data}")
 
+Get-ChildItem *.zip
+
 
 import configparser
 import os
