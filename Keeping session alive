@@ -1,39 +1,58 @@
-# common/log.py
+from pyspark.sql import SparkSession
+from common import SparkLogger  # Cleaner import
 
-class SparkLogger:
+def create_spark_session(app_name="MySparkJob"):
     """
-    A reusable logging utility for Spark applications.
-    Provides access to Spark's Log4j logger.
+    Initialize and return a SparkSession.
+    Args:
+        app_name (str): Application name for Spark.
+    Returns:
+        SparkSession: Spark session instance.
     """
+    return SparkSession.builder.appName(app_name).getOrCreate()
 
-    def __init__(self, spark_session, log_name="MyLogger"):
-        """
-        Initialize the logger with Spark's Log4j.
+def process_data(spark, logger):
+    """
+    Main processing logic for the Spark job.
+    Args:
+        spark (SparkSession): Active Spark session.
+        logger (SparkLogger): Logger for logging messages.
+    """
+    try:
+        logger.info("Starting Spark Job...")
 
-        Args:
-            spark_session: Active Spark session.
-            log_name (str): Name of the logger.
-        """
-        log4j_logger = spark_session._jvm.org.apache.log4j
-        self.logger = log4j_logger.LogManager.getLogger(log_name)
+        # Sample data processing logic
+        data = [("Alice", 34), ("Bob", 45), ("Cathy", 29)]
+        df = spark.createDataFrame(data, ["Name", "Age"])
+        logger.info("DataFrame created successfully.")
 
-    def info(self, message):
-        """Log an INFO message."""
-        self.logger.info(message)
+        # Perform some transformations (example)
+        df = df.withColumnRenamed("Age", "UserAge")
+        logger.info("Transformation completed: Renamed 'Age' to 'UserAge'.")
 
-    def warn(self, message):
-        """Log a WARN message."""
-        self.logger.warn(message)
+        df.show()
+        logger.info("Spark Job completed successfully.")
 
-    def error(self, message):
-        """Log an ERROR message."""
-        self.logger.error(message)
+    except Exception as e:
+        logger.error(f"An error occurred during processing: {str(e)}")
+        raise
 
-    def debug(self, message):
-        """Log a DEBUG message."""
-        self.logger.debug(message)
+def main():
+    """
+    Main entry point for the Spark job.
+    """
+    # Initialize Spark session
+    spark = create_spark_session()
 
-    def critical(self, message):
-        """Log a CRITICAL message."""
-        self.logger.fatal(message)
+    # Initialize logger
+    logger = SparkLogger(spark, log_name="MySparkDriver")
 
+    # Call processing logic
+    process_data(spark, logger)
+
+    # Stop Spark session
+    spark.stop()
+    logger.info("Spark session stopped successfully.")
+
+if __name__ == "__main__":
+    main()
