@@ -1,3 +1,17 @@
+cd /path/to/framework_dq_materiality/
+zip -r framework_dq_materiality.zip * 
+cd C:\path\to\framework_dq_materiality
+Compress-Archive -Path * -DestinationPath framework_dq_materiality.zip
+pyspark --py-files /path/to/framework_dq_materiality.zip
+# Test importing load_config from common
+from common import load_config
+
+# Load the configuration file
+config = load_config("config/framework.conf")
+print("Loaded Configuration:", config)
+
+
+
 from pyspark.sql import SparkSession
 from common import load_config
 from common import SparkLogger  # Import the reusable Spark logger
