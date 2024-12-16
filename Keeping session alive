@@ -1,58 +1,30 @@
-from pyspark.sql import SparkSession
-from common import SparkLogger  # Cleaner import
+[Output_data]
+dqChkConsOpPath=
+DQ_JOB_status_Table=dq_status_2_04
+Output_Table=dq_validation_result_2_04
+Failed_records_table=dq_failed_records
+Materiality_Out_table=dq_materiality_payload
+hdfs_path_for_dq_result=/data/<fid>/work/dq_latest/<appId>/
+hdfs_path_failure_response_file=/data/<fid>/work/dq/failure_response_filelist.dat
 
-def create_spark_session(app_name="MySparkJob"):
-    """
-    Initialize and return a SparkSession.
-    Args:
-        app_name (str): Application name for Spark.
-    Returns:
-        SparkSession: Spark session instance.
-    """
-    return SparkSession.builder.appName(app_name).getOrCreate()
+[nam]
+Output_Database_dev=gcgdllknadsg_eap_dq_t_db
+Output_Database_uat=gcgdllknausg_eap_dq_t_db
+Output_Database_prod=gcgdllknnasg_eap_dq_t_db
+Output_Database_cob=gcgdllknnasg_eap_dq_t_db
 
-def process_data(spark, logger):
-    """
-    Main processing logic for the Spark job.
-    Args:
-        spark (SparkSession): Active Spark session.
-        logger (SparkLogger): Logger for logging messages.
-    """
-    try:
-        logger.info("Starting Spark Job...")
+[metadata_insert_sql]
+dq_status_sql=INSERT INTO <schema_name>.<table_name> AS SELECT * FROM dq_status
+dq_validation_result_sql=INSERT INTO <schema_name>.<table_name> AS SELECT * FROM dq_validation_result
 
-        # Sample data processing logic
-        data = [("Alice", 34), ("Bob", 45), ("Cathy", 29)]
-        df = spark.createDataFrame(data, ["Name", "Age"])
-        logger.info("DataFrame created successfully.")
+[err_mail_config]
+err_mail_sub_when_kill_job_zero_input_records_flg_false=Data Quality job is gracefully successful, Dataset - <dataset_name>, Job Date - <run_date> Env - <env>
+err_mail_body_when_kill_job_zero_input_records_flg_false=The data quality job is gracefully successful.\n\nPlease find the below application id:\nSpark application id: <app_id>
+err_mail_sub=Materiality job failed, Dataset - <dataset_name>, Job Date - <run_date> Env - <env>
+err_mail_body=The Materiality job with following id has failed.\n\nSpark application id: <app_id>
+err_mail_sub_kafka_response_fail=EAP Data Quality Framework:Env - <env> - Issue while sending data to Kafka.
+err_mail_body_kafka_response_fail=Error occurred while sending results to kafka.\n\nDataset - <dataset_name>\nJob Date - <run_date>\nEnv - <env>\nPlease find the below application id.\nSpark application id:<app_id>
 
-        # Perform some transformations (example)
-        df = df.withColumnRenamed("Age", "UserAge")
-        logger.info("Transformation completed: Renamed 'Age' to 'UserAge'.")
-
-        df.show()
-        logger.info("Spark Job completed successfully.")
-
-    except Exception as e:
-        logger.error(f"An error occurred during processing: {str(e)}")
-        raise
-
-def main():
-    """
-    Main entry point for the Spark job.
-    """
-    # Initialize Spark session
-    spark = create_spark_session()
-
-    # Initialize logger
-    logger = SparkLogger(spark, log_name="MySparkDriver")
-
-    # Call processing logic
-    process_data(spark, logger)
-
-    # Stop Spark session
-    spark.stop()
-    logger.info("Spark session stopped successfully.")
-
-if __name__ == "__main__":
-    main()
+[Materiality_mail_config]
+mail_sub=EAP Data Quality Report, Dataset - <dataset_name>, Job Date - <run_date> Env - <env>, DQ Rule Validation Status - <jobStatus>
+mail_body=Attached is the data quality report for '<dataset_name>' executed in <env> environment.\n\nDataset Name(Filepath/Query):\n<input_sql_or_file>\n\nTotal number of records: <tot_row_count>\n\nNumber of rules passed: <succeeded_constraints_cnt>\n\nNumber of rules failed: <failed_constraints_cnt>\n\nSpark application id: <app_id>
