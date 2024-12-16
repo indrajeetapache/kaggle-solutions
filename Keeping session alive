@@ -50,4 +50,51 @@ def get_sample_dict():
     return {"key1": "value1", "key2": "value2", "key3": "value3"}
 from .sample_data import get_sample_dict
 
+========================
+
+import logging
+
+def get_logger(name="ApplicationLogger", level=logging.INFO):
+    """
+    Sets up and returns a reusable logger.
+
+    Args:
+        name (str): Name of the logger.
+        level (int): Logging level (default is INFO).
+
+    Returns:
+        logging.Logger: Configured logger instance.
+    """
+    logger = logging.getLogger(name)
+    if not logger.handlers:  # Prevent duplicate handlers
+        logger.setLevel(level)
+        
+        # Console handler for logging
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        
+        # Logging format
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        console_handler.setFormatter(formatter)
+        
+        # Add the handler to the logger
+        logger.addHandler(console_handler)
+    
+    return logger
+from .log import get_logger
+from common import get_logger
+
+def main():
+    # Initialize logger
+    logger = get_logger("DriverLogger")
+    
+    logger.info("Starting the Spark job...")
+    logger.warn("This is a warning log.")
+    logger.error("This is an error log.")
+    logger.info("Job completed successfully.")
+
+if __name__ == "__main__":
+    main()
 
