@@ -23,7 +23,15 @@ Get-ChildItem *.zip
 
 
 import sys
-sys.path.append("framework_dq_materiality.zip")
+import os
+
+# Append the path of the ZIP file to PYTHONPATH
+zip_file_path = "framework_dq_materiality.zip"
+sys.path.append(os.path.abspath(zip_file_path))
+
+# Verify the path is added
+print(sys.path)
+
 ===
 # Initialize the logger
 logger = get_logger("TestLogger")
