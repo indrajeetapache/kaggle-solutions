@@ -22,43 +22,14 @@ logger.info(f"Configuration Loaded: {config_data}")
 Get-ChildItem *.zip
 
 
-import configparser
-import os
-from common.log import get_logger  # Import the centralized logger
+import sys
+sys.path.append("framework_dq_materiality.zip")
+===
+# Initialize the logger
+logger = get_logger("TestLogger")
+logger.info("Logger initialized successfully.")
 
-# Get the logger for this module
-logger = get_logger("ConfigLoader")
-
-def load_config(config_file_path):
-    """
-    Reads a framework configuration file and returns all sections and key-value pairs as a nested dictionary.
-
-    Args:
-        config_file_path (str): Path to the configuration file.
-
-    Returns:
-        dict: Nested dictionary with all configuration sections and key-value pairs.
-
-    Raises:
-        FileNotFoundError: If the configuration file does not exist.
-    """
-    try:
-        config_path = os.path.abspath(config_file_path)
-
-        if not os.path.exists(config_path):
-            logger.error(f"Configuration file not found: {config_path}")
-            raise FileNotFoundError(f"Configuration file not found: {config_path}")
-
-        logger.info(f"Loading configuration from: {config_path}")
-
-        config = configparser.ConfigParser(interpolation=None)
-        config.read(config_path)
-
-        config_dict = {section: dict(config.items(section)) for section in config.sections()}
-
-        logger.info("Configuration loaded successfully.")
-        return config_dict
-
-    except Exception as e:
-        logger.error(f"Error loading configuration: {e}")
-        raise
+# Load the configuration
+config_file_path = "config/framework.conf"
+config = load_config(config_file_path)
+logger.info(f"Loaded Config: {config}")
