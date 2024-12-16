@@ -1,1 +1,21 @@
+import configparser
+import os
+
+def load_config(config_file_path):
+    """
+    Reads a framework configuration file and returns all sections and key-value pairs as a nested dictionary.
+
+    Args:
+        config_file_path (str): Path to the configuration file.
+
+    Returns:
+        dict: Nested dictionary with all configuration sections and key-value pairs.
+    """
+    config_path = os.path.abspath(config_file_path)
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(config_path)
+    return {section: dict(config.items(section)) for section in config.sections()}
 
