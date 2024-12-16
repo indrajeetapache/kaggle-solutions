@@ -10,6 +10,14 @@ from common import load_config
 config = load_config("config/framework.conf")
 print("Loaded Configuration:", config)
 
+from common.utils import load_config
+from common.log import get_logger
+
+logger = get_logger("PySparkTestLogger")
+
+config_file_path = "config/framework.conf"
+config_data = load_config(config_file_path)
+logger.info(f"Configuration Loaded: {config_data}")
 
 
 import configparser
