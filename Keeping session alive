@@ -1,37 +1,59 @@
-# common/__init__.py
-from .utils import load_config
+from pyspark.sql import SparkSession
+from common import load_config
+from common import SparkLogger  # Import the reusable Spark logger
 
-
-import configparser
-import os
-
-def load_config(config_file_path):
+def create_spark_session(app_name="SparkApplication"):
     """
-    Reads a framework configuration file and returns all sections and key-value pairs as a nested dictionary.
+    Creates and returns a Spark session.
 
     Args:
-        config_file_path (str): Path to the configuration file.
+        app_name (str): Name of the Spark application.
 
     Returns:
-        dict: Nested dictionary with all configuration sections and key-value pairs.
+        SparkSession: The Spark session object.
     """
-    config_path = os.path.abspath(config_file_path)
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
-
-    config = configparser.ConfigParser(interpolation=None)
-    config.read(config_path)
-    return {section: dict(config.items(section)) for section in config.sections()}
-
-from common import load_config
+    spark = SparkSession.builder \
+        .appName(app_name) \
+        .getOrCreate()
+    return spark
 
 def main():
-    # Path to the configuration file
-    config_file_path = "config/framework.conf"
-    
-    # Load the configuration
-    framework_config = load_config(config_file_path)
-    print("Loaded Configurations:", framework_config)
+    """
+    Main entry point for the Spark job.
+    """
+    # Step 1: Initialize Spark Session
+    spark = create_spark_session(app_name="FrameworkConfigJob")
+    logger = SparkLogger(spark, log_name="FrameworkConfigLogger")
+
+    try:
+        logger.info("Spark Session initialized successfully.")
+        
+        # Step 2: Load the configuration
+        config_file_path = "config/framework.conf"
+        framework_config = load_config(config_file_path)
+        logger.info("Framework Configuration Loaded Successfully.")
+        logger.info(f"Loaded Configuration: {framework_config}")
+
+        # Example: Access specific keys from a section
+        output_table = framework_config["Output_data"]["Output_Table"]
+        logger.info(f"Output Table: {output_table}")
+
+        # Step 3: Example Spark logic
+        data = [("Alice", 34), ("Bob", 45), ("Cathy", 29)]
+        df = spark.createDataFrame(data, ["Name", "Age"])
+        logger.info("Sample DataFrame created successfully.")
+        df.show()
+
+        logger.info("Spark Job Completed Successfully.")
+
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        raise
+
+    finally:
+        # Step 4: Stop Spark session
+        spark.stop()
+        logger.info("Spark Session stopped successfully.")
 
 if __name__ == "__main__":
     main()
