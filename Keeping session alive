@@ -33,3 +33,21 @@ logger.info("Logger initialized successfully.")
 config_file_path = "config/framework.conf"
 config = load_config(config_file_path)
 logger.info(f"Loaded Config: {config}")
+==========
+
+import logging
+
+def get_logger(name="ApplicationLogger", level=logging.INFO):
+    """
+    Sets up and returns a reusable logger.
+    """
+    logger = logging.getLogger(name)
+    if not logger.handlers:  # Prevent duplicate handlers
+        logger.setLevel(level)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    return logger
+
