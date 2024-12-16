@@ -23,3 +23,15 @@ def load_config(config_file_path):
     config.read(config_path)
     return {section: dict(config.items(section)) for section in config.sections()}
 
+from common import load_config
+
+def main():
+    # Path to the configuration file
+    config_file_path = "config/framework.conf"
+    
+    # Load the configuration
+    framework_config = load_config(config_file_path)
+    print("Loaded Configurations:", framework_config)
+
+if __name__ == "__main__":
+    main()
