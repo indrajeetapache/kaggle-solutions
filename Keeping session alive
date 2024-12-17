@@ -55,25 +55,12 @@ from .sample_data import get_sample_dict
 import configparser
 import os
 
-def load_config(config_file_path):
-    """
-    Reads a framework configuration file and returns all sections and key-value pairs as a nested dictionary.
-    """
-    try:
-        # Check if the file exists in the current directory (Spark uploads it here)
-        if not os.path.exists(config_file_path):
-            logger.error(f"Configuration file not found: {config_file_path}")
-            raise FileNotFoundError(f"Configuration file not found: {config_file_path}")
+pyspark \
+  --conf spark.hadoop.dfs.client.failover.max.attempts=5 \
+  --conf spark.hadoop.dfs.client.failover.sleep.base.millis=2000 \
+  --conf spark.hadoop.dfs.client.failover.sleep.max.millis=15000 \
+  --conf spark.port.maxRetries=50
 
-        logger.info(f"Loading configuration from: {config_file_path}")
-
-        # Load the configuration file
-        config = configparser.ConfigParser(interpolation=None)
-        config.read(config_file_path)
-
-        # Convert to a dictionary
-        config_dict = {section: dict(config.items(section)) for section in config.sections()}
-        logger.info("Configuration loaded successfully.")
         return config_dict
 
     except Exception as e:
