@@ -52,14 +52,31 @@ from .sample_data import get_sample_dict
 
 ========================
 
-import configparser
-import os
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, lit
+from common.log import get_logger
 
-pyspark \
-  --conf spark.hadoop.dfs.client.failover.max.attempts=5 \
-  --conf spark.hadoop.dfs.client.failover.sleep.base.millis=2000 \
-  --conf spark.hadoop.dfs.client.failover.sleep.max.millis=15000 \
-  --conf spark.port.maxRetries=50
+logger = get_logger("FailedRecordTransform")
+
+def transform_failed_records(spark, input_path):
+    """
+    Perform transformations on the Failed Records Table.
+    Args:
+        spark (SparkSession): The Spark session.
+        input_path (str): Path to the input Failed Records Table.
+    Returns:
+        DataFrame: Transformed Failed Records Table.
+    """
+    logger.info("Starting transformation for Failed Records Table")
+    df = spark.read.parquet(input_path)
+    
+    # Example transformation: Add a 'status' column for failed records
+    transformed_df = df.withColumn("record_status", lit("FAILED")) \
+                       .filter(col("error_code").isNotNull())
+
+    logger.info("Transformation completed for Failed Records Table")
+    return transformed_df
+
 
         return config_dict
 
