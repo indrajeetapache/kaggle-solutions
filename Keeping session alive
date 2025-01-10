@@ -1,19 +1,31 @@
-e// First, let's add more robust error handling options
-val df: DataFrame = spark.read
-  .schema(schema)
-  .option("header", "false")
-  .option("multiline", "true")
-  .option("encoding", "UTF-8")
-  .option("delimiter", "\u0001")
-  .option("mode", "PERMISSIVE")  // Try PERMISSIVE instead of DROPMALFORMED
-  .option("columnNameOfCorruptRecord", "_corrupt_record")  // Track corrupt records
-  .option("nullValue", "")  // Handle empty fields
-  .option("maxCharsPerColumn", 100000)  // Increase if you have large fields
-  .csv("/data/gcgeaapnatldu/raw/169912/sow_ih_payer_test/2025/01/06/batch5/sow_ih_payer_20240822.dat")
+Title: Implement File Ingestion Framework with Apache Iceberg Reader Support
 
-// Now let's check for corrupt records
-df.filter($"_corrupt_record".isNotNull).show(false)
+Description:
+Develop a file ingestion framework to support Apache Iceberg table format reading capabilities, enabling efficient data processing and analytics workflows.
 
-// Get count of good vs bad records
-println(s"Total records: ${df.count()}")
-println(s"Corrupt records: ${df.filter($"_corrupt_record".isNotNull).count()}")
+Acceptance Criteria:
+
+1. Framework Configuration
+- Implement configuration parser for Iceberg reader settings
+- Support basic authentication mechanisms
+- Enable custom table location specification
+
+2. Iceberg Reader Implementation
+- Create reader component for Iceberg table format
+- Handle schema evolution and partitioning
+- Support snapshot isolation and time travel queries
+
+3. Data Processing
+- Implement streaming and batch read operations
+- Enable column pruning and predicate pushdown
+- Handle nested data structures
+
+4. Error Handling
+- Implement comprehensive error handling for read failures
+- Provide detailed logging and monitoring capabilities
+- Add retry mechanisms for transient failures
+
+5. Testing & Documentation
+- Write unit tests with >80% coverage
+- Create integration test suite
+- Document API specifications and usage examples
