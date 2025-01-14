@@ -99,3 +99,16 @@ val combinedDfWithFlag = combinedDf
     // Keep invalid records (marked with [INVALID])
     ($"flag" === 1 && $"next_flag" =!= 1)
   )
+
+
+val windowSpec = Window
+  .orderBy("unique_id")
+  .rowsBetween(0, 1)  // Only look at current row and next row
+
+val combinedDf = flaggedDataFrame
+  .withColumn("next_flag", lead("flag", 1).over(windowSpec))
+  .withColumn("next_line", lead("line", 1).over(windowSpec))
+  .withColumn("combined_line",
+    when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
+    .otherwise($"line"))
+  .where($"flag" === 0 || ($"flag" === 1 && lead("flag", 1, 0).over(windowSpec) === 0))
