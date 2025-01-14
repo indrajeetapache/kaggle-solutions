@@ -1,3 +1,21 @@
+// 1. lag("flag", 1, 0) - Gets previous row's flag value, defaults to 0 if none
+// 2. when($"flag" === 1 && [previous flag] === 0, 1).otherwise(0) 
+//    - Returns 1 when current row starts a new flag=1 sequence
+// 3. sum(...).over(Window.orderBy("unique_id"))
+//    - Creates running total of these 1s, giving unique group numbers
+// 4. partitionBy(above_result)
+//    - Groups rows with same sequence number together
+// 5. orderBy("unique_id") - Maintains order within groups
+
+Example result:
+id | flag | group
+1  | 0    | 0
+2  | 1    | 1  // First sequence
+3  | 1    | 1  // Same sequence
+4  | 0    | 1
+5  | 1    | 2  // New sequence
+6  | 1    | 2  // Same sequence
+
 val windowSpec = Window
   .partitionBy(
     sum(
