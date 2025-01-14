@@ -1,3 +1,21 @@
+val flaggedDataFrame = processedDataFrame.withColumn(
+    colName = "flag",
+    when(size(split($"line", "\\" + effectiveReplacementChar)) === schema.fields.length,
+        value = 0).otherwise(value = 1)
+)
+
+// Step 3: Modified approach to only combine consecutive flagged lines
+// First, add a group identifier for consecutive flag=1 rows
+val windowForGrouping = Window.orderBy("unique_id")
+val dfWithGroups = flaggedDataFrame
+    .withColumn("prev_flag", lag("flag", 1, 0).over(windowForGrouping))
+    .withColumn("group_start", 
+        when(($"flag" === 1) and 
+             (coalesce($"prev_flag", 0) === 0), 1)
+        .otherwise(0))
+    .withColumn("group_id", 
+        sum("group_start").over(windowForGrouping))
+
 // 1. lag("flag", 1, 0) - Gets previous row's flag value, defaults to 0 if none
 // 2. when($"flag" === 1 && [previous flag] === 0, 1).otherwise(0) 
 //    - Returns 1 when current row starts a new flag=1 sequence
