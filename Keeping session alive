@@ -1,12 +1,13 @@
-val windowSpecLead = Window.orderBy("unique_id")
-
 val combinedDf = flaggedDataFrame
  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
  .withColumn("combined_line",
    when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
    .otherwise($"line"))
- .where($"flag" === 0 || ($"flag" === 1 && lead("flag", 1, 0).over(windowSpecLead) === 0))
- .withColumn(colName = "is_combined",
+ .withColumn("to_keep", 
+   $"flag" === 0 || ($"flag" === 1 && $"next_flag" === 0))
+ .filter($"to_keep")
+ .withColumn("is_combined",
    when($"flag" === 1 && $"next_flag" === 1, true)
    .otherwise(false))
+ .drop("to_keep")
