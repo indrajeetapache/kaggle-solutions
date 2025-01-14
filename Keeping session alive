@@ -1,31 +1,27 @@
-Title: Implement File Ingestion Framework with Apache Iceberg Reader Support
+val windowSpec = Window
+  .partitionBy(
+    sum(
+      when($"flag" === 1 && lag("flag", 1, 0).over(Window.orderBy("unique_id")) === 0, 1)
+      .otherwise(0)
+    ).over(Window.orderBy("unique_id"))
+  )
+  .orderBy("unique_id")
 
-Description:
-Develop a file ingestion framework to support Apache Iceberg table format reading capabilities, enabling efficient data processing and analytics workflows.
+// Change 1: Replace lead with lag since you want to look at previous records
+.withColumn( colName = "next_line", lag(columnName = "line", offset = 1).over(windowSpec))
+.withColumn( colName = "next_flag", lag(columnName = "flag", offset = 1).over(windowSpec))
 
-Acceptance Criteria:
+// Change 2: Add partitioning to windowSpec to group consecutive flag=1 rows
+val windowSpec = Window.partitionBy(
+    // Create groups for consecutive flag=1 records
+    sum(when($"flag" === 1 && lag("flag", 1, 0).over(Window.orderBy("unique_id")) === 0, 1)
+        .otherwise(0)).over(Window.orderBy("unique_id"))
+  ).orderBy("unique_id")
 
-1. Framework Configuration
-- Implement configuration parser for Iceberg reader settings
-- Support basic authentication mechanisms
-- Enable custom table location specification
-
-2. Iceberg Reader Implementation
-- Create reader component for Iceberg table format
-- Handle schema evolution and partitioning
-- Support snapshot isolation and time travel queries
-
-3. Data Processing
-- Implement streaming and batch read operations
-- Enable column pruning and predicate pushdown
-- Handle nested data structures
-
-4. Error Handling
-- Implement comprehensive error handling for read failures
-- Provide detailed logging and monitoring capabilities
-- Add retry mechanisms for transient failures
-
-5. Testing & Documentation
-- Write unit tests with >80% coverage
-- Create integration test suite
-- Document API specifications and usage examples
+// Change 3: Modify the combination logic
+.withColumn(
+    colName = "combined_line",
+    when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
+    .when($"flag" === 1 && $"next_flag" =!= 1, concat($"line", " [INVALID]"))
+    .otherwise($"line")
+)
