@@ -43,3 +43,41 @@ val windowSpec = Window.partitionBy(
     .when($"flag" === 1 && $"next_flag" =!= 1, concat($"line", " [INVALID]"))
     .otherwise($"line")
 )
+
+
+// Sample data showing how group_id and combining works:
+Row | flag | group_id  | lead(group_id) | Should combine?
+1   | 1    | 100      | 100            | YES (same group as next row)
+2   | 1    | 100      | null           | NO  (last in group)
+3   | 0    | null     | 200            | NO  (different group)
+4   | 1    | 200      | 200            | YES (same group as next row)
+5   | 1    | 200      | null           | NO  (last in group)
+
+// When we check: $"group_id" === lead("group_id", 1).over(windowSpec)
+// It compares:
+- Row 1: 100 === 100  -> true  (combine with next)
+- Row 2: 100 === null -> false (don't combine)
+- Row 3: null === 200 -> false (don't combine)
+- Row 4: 200 === 200  -> true  (combine with next)
+- Row 5: 200 === null -> false (don't combine)
+
+
+.withColumn(colName = "is_combined",
+  when(
+    // Check if current row's flag=1 AND next row's flag=1 AND they're in same partition
+    $"flag" === 1 && 
+    $"next_flag" === 1 && 
+    $"group_id" === lead("group_id", 1).over(windowSpec),
+    true
+  ).otherwise(false)
+)
+
+val combinedDfWithFlag = combinedDf
+  .filter(
+    // Keep successfully combined lines (first part only)
+    ($"is_combined" === true && $"flag" === 1 && $"next_flag" === 1) ||
+    // Keep standalone valid records
+    ($"flag" === 0) ||
+    // Keep invalid records (marked with [INVALID])
+    ($"flag" === 1 && $"next_flag" =!= 1)
+  )
