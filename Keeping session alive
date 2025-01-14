@@ -4,8 +4,11 @@ val combinedDf = flaggedDataFrame
  .withColumn("combined_line",
    when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
    .otherwise($"line"))
- .withColumn("to_keep", 
-   $"flag" === 0 || ($"flag" === 1 && $"next_flag" === 0))
+ .withColumn("to_keep",
+  $"flag" === 0 ||  // complete records
+  ($"flag" === 1 && $"next_flag" === 1) ||  // first part of combined pairs
+  ($"flag" === 1 && $"next_flag" === 0)  // standalone flag=1 records
+)
  .filter($"to_keep")
  .withColumn("is_combined",
    when($"flag" === 1 && $"next_flag" === 1, true)
