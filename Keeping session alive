@@ -1,114 +1,12 @@
-val flaggedDataFrame = processedDataFrame.withColumn(
-    colName = "flag",
-    when(size(split($"line", "\\" + effectiveReplacementChar)) === schema.fields.length,
-        value = 0).otherwise(value = 1)
-)
-
-// Step 3: Modified approach to only combine consecutive flagged lines
-// First, add a group identifier for consecutive flag=1 rows
-val windowForGrouping = Window.orderBy("unique_id")
-val dfWithGroups = flaggedDataFrame
-    .withColumn("prev_flag", lag("flag", 1, 0).over(windowForGrouping))
-    .withColumn("group_start", 
-        when(($"flag" === 1) and 
-             (coalesce($"prev_flag", 0) === 0), 1)
-        .otherwise(0))
-    .withColumn("group_id", 
-        sum("group_start").over(windowForGrouping))
-
-// 1. lag("flag", 1, 0) - Gets previous row's flag value, defaults to 0 if none
-// 2. when($"flag" === 1 && [previous flag] === 0, 1).otherwise(0) 
-//    - Returns 1 when current row starts a new flag=1 sequence
-// 3. sum(...).over(Window.orderBy("unique_id"))
-//    - Creates running total of these 1s, giving unique group numbers
-// 4. partitionBy(above_result)
-//    - Groups rows with same sequence number together
-// 5. orderBy("unique_id") - Maintains order within groups
-
-Example result:
-id | flag | group
-1  | 0    | 0
-2  | 1    | 1  // First sequence
-3  | 1    | 1  // Same sequence
-4  | 0    | 1
-5  | 1    | 2  // New sequence
-6  | 1    | 2  // Same sequence
-
-val windowSpec = Window
-  .partitionBy(
-    sum(
-      when($"flag" === 1 && lag("flag", 1, 0).over(Window.orderBy("unique_id")) === 0, 1)
-      .otherwise(0)
-    ).over(Window.orderBy("unique_id"))
-  )
-  .orderBy("unique_id")
-
-// Change 1: Replace lead with lag since you want to look at previous records
-.withColumn( colName = "next_line", lag(columnName = "line", offset = 1).over(windowSpec))
-.withColumn( colName = "next_flag", lag(columnName = "flag", offset = 1).over(windowSpec))
-
-// Change 2: Add partitioning to windowSpec to group consecutive flag=1 rows
-val windowSpec = Window.partitionBy(
-    // Create groups for consecutive flag=1 records
-    sum(when($"flag" === 1 && lag("flag", 1, 0).over(Window.orderBy("unique_id")) === 0, 1)
-        .otherwise(0)).over(Window.orderBy("unique_id"))
-  ).orderBy("unique_id")
-
-// Change 3: Modify the combination logic
-.withColumn(
-    colName = "combined_line",
-    when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
-    .when($"flag" === 1 && $"next_flag" =!= 1, concat($"line", " [INVALID]"))
-    .otherwise($"line")
-)
-
-
-// Sample data showing how group_id and combining works:
-Row | flag | group_id  | lead(group_id) | Should combine?
-1   | 1    | 100      | 100            | YES (same group as next row)
-2   | 1    | 100      | null           | NO  (last in group)
-3   | 0    | null     | 200            | NO  (different group)
-4   | 1    | 200      | 200            | YES (same group as next row)
-5   | 1    | 200      | null           | NO  (last in group)
-
-// When we check: $"group_id" === lead("group_id", 1).over(windowSpec)
-// It compares:
-- Row 1: 100 === 100  -> true  (combine with next)
-- Row 2: 100 === null -> false (don't combine)
-- Row 3: null === 200 -> false (don't combine)
-- Row 4: 200 === 200  -> true  (combine with next)
-- Row 5: 200 === null -> false (don't combine)
-
-
-.withColumn(colName = "is_combined",
-  when(
-    // Check if current row's flag=1 AND next row's flag=1 AND they're in same partition
-    $"flag" === 1 && 
-    $"next_flag" === 1 && 
-    $"group_id" === lead("group_id", 1).over(windowSpec),
-    true
-  ).otherwise(false)
-)
-
-val combinedDfWithFlag = combinedDf
-  .filter(
-    // Keep successfully combined lines (first part only)
-    ($"is_combined" === true && $"flag" === 1 && $"next_flag" === 1) ||
-    // Keep standalone valid records
-    ($"flag" === 0) ||
-    // Keep invalid records (marked with [INVALID])
-    ($"flag" === 1 && $"next_flag" =!= 1)
-  )
-
-
-val windowSpec = Window
-  .orderBy("unique_id")
-  .rowsBetween(0, 1)  // Only look at current row and next row
+val windowSpecLead = Window.orderBy("unique_id")
 
 val combinedDf = flaggedDataFrame
-  .withColumn("next_flag", lead("flag", 1).over(windowSpec))
-  .withColumn("next_line", lead("line", 1).over(windowSpec))
-  .withColumn("combined_line",
-    when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
-    .otherwise($"line"))
-  .where($"flag" === 0 || ($"flag" === 1 && lead("flag", 1, 0).over(windowSpec) === 0))
+ .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
+ .withColumn("next_line", lead("line", 1).over(windowSpecLead))
+ .withColumn("combined_line",
+   when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
+   .otherwise($"line"))
+ .where($"flag" === 0 || ($"flag" === 1 && lead("flag", 1, 0).over(windowSpecLead) === 0))
+ .withColumn(colName = "is_combined",
+   when($"flag" === 1 && $"next_flag" === 1, true)
+   .otherwise(false))
