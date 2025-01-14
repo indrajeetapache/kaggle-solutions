@@ -11,3 +11,13 @@ val combinedDf = flaggedDataFrame
    when($"flag" === 1 && $"next_flag" === 1, true)
    .otherwise(false))
  .drop("to_keep")
+
+
+.filter(
+  // Keep valid standalone records (flag=0)
+  $"flag" === 0 ||
+  // Keep first part of combined pairs that are successfully combined
+  ($"flag" === 1 && $"is_combined" === true) ||
+  // Keep invalid/uncombined flag=1 records
+  ($"flag" === 1 && $"next_flag" === 0)
+)
