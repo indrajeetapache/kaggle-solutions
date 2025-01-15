@@ -1,27 +1,26 @@
 val pass1 = flaggedDataFrame
- .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpecLead))
- .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
- .withColumn("next_line", lead("line", 1).over(windowSpecLead))
- .withColumn("group_id", floor(($"unique_id" - 1) / 2))
- .withColumn("test_combined",
-   when($"flag" === 1 && 
-        $"next_flag" === 1 && 
-        $"uniqueidlead" === ($"unique_id" + 1) &&
-        $"group_id" === floor(($"uniqueidlead" - 1) / 2),
-     concat($"line", $"next_line"))
-   .otherwise($"line"))
- // Add column for combined line length
- .withColumn("combined_length", 
-   size(split($"test_combined", "\\" + effectiveReplacementChar)))
- .withColumn("initial_can_combine",
-   when($"flag" === 1 && 
-        $"next_flag" === 1 && 
-        $"uniqueidlead" === ($"unique_id" + 1) &&
-        $"group_id" === floor(($"uniqueidlead" - 1) / 2),
-     $"combined_length" === schema.fields.length)
-   .otherwise(false))
- .withColumn("is_combined", $"initial_can_combine")
-al combinedDf = pass1
+  .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpecLead))
+  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
+  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
+  .withColumn("group_id", floor(($"unique_id" - 2) / 2)) // Changed from -1 to -2
+  .withColumn("test_combined",
+    when($"flag" === 1 && 
+         $"next_flag" === 1 && 
+         $"uniqueidlead" === ($"unique_id" + 1) &&
+         $"group_id" === floor(($"uniqueidlead" - 2) / 2),
+      concat($"line", $"next_line"))
+    .otherwise($"line"))
+  .withColumn("combined_length", 
+    size(split($"test_combined", "\\" + effectiveReplacementChar)))
+  .withColumn("initial_can_combine",
+    when($"flag" === 1 && 
+         $"next_flag" === 1 && 
+         $"uniqueidlead" === ($"unique_id" + 1) &&
+         $"group_id" === floor(($"uniqueidlead" - 2) / 2),
+      $"combined_length" === schema.fields.length)
+    .otherwise(false))
+  .withColumn("is_combined", $"initial_can_combine")
+val combinedDf = pass1
  // Final combination checks
  .withColumn("can_combine", $"initial_can_combine")
  .withColumn("combined_line",
