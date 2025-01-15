@@ -1,13 +1,5 @@
-.withColumn("is_combined", 
-  when($"flag" === 1 && $"next_flag" === 1 && $"can_combine", true)
+.withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
+.withColumn("can_combine", 
+  when(condition = $"flag" === 1 && $"next_flag" === 1 && coalesce($"prev_combined", false) === false,
+    size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
   .otherwise(false))
-val combinedDfWithFlag = combinedDf
-  .withColumn("is_invalid", 
-    $"flag" === 1 && 
-    ($"next_flag" === 0 || size(split($"combined_line", "\\" + effectiveReplacementChar)) =!= schema.fields.length)
-  )
-  .filter(
-    $"flag" === 0 || 
-    ($"flag" === 1 && $"is_combined" === true) ||
-    ($"flag" === 1 && $"is_invalid" === true)
-  )
