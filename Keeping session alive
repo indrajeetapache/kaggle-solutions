@@ -81,3 +81,39 @@ val combinedDf = flaggedDataFrame
   ($"flag" === 1 && !$"can_combine" && $"next_flag" === 0) || // Last record
   ($"flag" === 1 && !$"can_combine" && !$"is_combined" && !coalesce($"prev_combined", false)) // Standalone records that aren't part of any combination
 )
+
+========
+
+val combinedDf = flaggedDataFrame
+ .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpecLead))
+ .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
+ .withColumn("next_line", lead("line", 1).over(windowSpecLead))
+ .withColumn("is_combined", lit(false))
+ .withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
+ .withColumn("test_combined",
+   when($"flag" === 1 && 
+        $"next_flag" === 1 && 
+        $"uniqueidlead" === ($"unique_id" + 1) &&
+        !coalesce($"prev_combined", false),
+     concat($"line", $"next_line"))
+   .otherwise($"line"))
+ .withColumn("initial_can_combine",
+   when($"flag" === 1 && 
+        $"next_flag" === 1 && 
+        $"uniqueidlead" === ($"unique_id" + 1) &&
+        !coalesce($"prev_combined", false),
+     size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
+   .otherwise(false))
+ .withColumn("can_combine",
+   when($"initial_can_combine" && coalesce(lag($"initial_can_combine", 1).over(windowSpecLead), false), 
+     false)
+   .otherwise($"initial_can_combine"))
+ .withColumn("is_combined", $"can_combine")
+ .withColumn("combined_line",
+   when($"can_combine", $"test_combined")
+   .otherwise($"line"))
+ .withColumn("to_keep",
+   $"flag" === 0 || 
+   ($"flag" === 1 && $"can_combine") ||
+   ($"flag" === 1 && !$"can_combine" && $"next_flag" === 0) ||
+   ($"flag" === 1 && !$"can_combine" && !$"is_combined" && !coalesce($"prev_combined", false)))
