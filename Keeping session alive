@@ -18,3 +18,9 @@ val combinedDf = flaggedDataFrame
   .withColumn("combined_line",
     when($"can_combine", $"test_combined")
     .otherwise($"line"))
+.withColumn("to_keep", 
+    $"flag" === 0 || // Complete records
+    ($"flag" === 1 && $"next_flag" === 1 && $"can_combine") || // First part of valid combination
+    ($"flag" === 1 && $"next_flag" === 0) || // Last record
+    ($"flag" === 1 && !$"can_combine" && !coalesce($"prev_combined", false)) // Invalid/standalone records
+  )
