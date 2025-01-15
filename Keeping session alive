@@ -1,5 +1,20 @@
-.withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
-.withColumn("can_combine", 
-  when(condition = $"flag" === 1 && $"next_flag" === 1 && coalesce($"prev_combined", false) === false,
-    size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
-  .otherwise(false))
+val combinedDf = flaggedDataFrame
+  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
+  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
+  .withColumn("test_combined",
+    when($"flag" === 1 && $"next_flag" === 1,
+      concat($"line", $"next_line"))
+    .otherwise($"line"))
+  .withColumn("is_combined",
+    when($"flag" === 1 && $"next_flag" === 1 && 
+      size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length,
+      true)
+    .otherwise(false))
+  .withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
+  .withColumn("can_combine",
+    when($"flag" === 1 && $"next_flag" === 1 && coalesce($"prev_combined", false) === false,
+      size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
+    .otherwise(false))
+  .withColumn("combined_line",
+    when($"can_combine", $"test_combined")
+    .otherwise($"line"))
