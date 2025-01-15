@@ -1,183 +1,33 @@
-val combinedDf = flaggedDataFrame
-  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
-  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
-  .withColumn("test_combined",
-    when($"flag" === 1 && $"next_flag" === 1,
-      concat($"line", $"next_line"))
-    .otherwise($"line"))
-  .withColumn("is_combined",
-    when($"flag" === 1 && $"next_flag" === 1 && 
-      size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length,
-      true)
-    .otherwise(false))
-  .withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
-  .withColumn("can_combine",
-    when($"flag" === 1 && $"next_flag" === 1 && coalesce($"prev_combined", false) === false,
-      size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
-    .otherwise(false))
-  .withColumn("combined_line",
-    when($"can_combine", $"test_combined")
-    .otherwise($"line"))
-.withColumn("to_keep", 
-    $"flag" === 0 || // Complete records
-    ($"flag" === 1 && $"next_flag" === 1 && $"can_combine") || // First part of valid combination
-    ($"flag" === 1 && $"next_flag" === 0) || // Last record
-    ($"flag" === 1 && !$"can_combine" && !coalesce($"prev_combined", false)) // Invalid/standalone records
-  )
-
-=====
-.filter(
-  $"flag" === 0 || // Complete records
-  ($"flag" === 1 && $"can_combine") || // First part of valid combinations
-  ($"flag" === 1 && !$"can_combine" && !coalesce($"prev_combined", false)) // Invalid/standalone records
-)
-=====
-
-val combinedDf = flaggedDataFrame
-  // First, add unique ID lead to ensure sequential pairing
-  .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpecLead))
-  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
-  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
-  // Add initial is_combined flag
-  .withColumn("is_combined", lit(false))
-  // Calculate prev_combined to check previous row status
-  .withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
-  // Test combined only if previous row wasn't combined
-  .withColumn("test_combined",
-    when($"flag" === 1 && 
-         $"next_flag" === 1 && 
-         $"uniqueidlead" === ($"unique_id" + 1) &&
-         !coalesce($"prev_combined", false),
-      concat($"line", $"next_line"))
-    .otherwise($"line"))
-  // Check if combination is valid
-  .withColumn("can_combine",
-    when($"flag" === 1 && 
-         $"next_flag" === 1 && 
-         $"uniqueidlead" === ($"unique_id" + 1) &&
-         !coalesce($"prev_combined", false),
-      size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
-    .otherwise(false))
-  // Update is_combined based on can_combine
-  .withColumn("is_combined", $"can_combine")
-  // Create final combined line
-  .withColumn("combined_line",
-    when($"can_combine", $"test_combined")
-    .otherwise($"line"))
-  // Determine which rows to keep
-  .withColumn("to_keep",
-    $"flag" === 0 || // Complete records
-    ($"flag" === 1 && $"can_combine") || // First part of valid combinations
-    ($"flag" === 1 && !$"can_combine" && !coalesce($"prev_combined", false)) // Standalone/invalid records
-  )
-
-
-======
-12.12
-
-.withColumn("to_keep",
-  $"flag" === 0 || // Complete records
-  ($"flag" === 1 && $"can_combine") || // Keep first row of combination
-  ($"flag" === 1 && !$"can_combine" && $"next_flag" === 0) || // Last record
-  ($"flag" === 1 && !$"can_combine" && !$"is_combined" && !coalesce($"prev_combined", false)) // Standalone records that aren't part of any combination
-)
-
-========
-
-val combinedDf = flaggedDataFrame
+val pass1 = flaggedDataFrame
  .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpecLead))
  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
- .withColumn("is_combined", lit(false))
- .withColumn("prev_combined", lag("is_combined", 1).over(windowSpecLead))
+ .withColumn("group_id", floor(($"unique_id" - 1) / 2))
  .withColumn("test_combined",
    when($"flag" === 1 && 
         $"next_flag" === 1 && 
         $"uniqueidlead" === ($"unique_id" + 1) &&
-        !coalesce($"prev_combined", false),
+        $"group_id" === floor(($"uniqueidlead" - 1) / 2),
      concat($"line", $"next_line"))
    .otherwise($"line"))
+ // Add column for combined line length
+ .withColumn("combined_length", 
+   size(split($"test_combined", "\\" + effectiveReplacementChar)))
  .withColumn("initial_can_combine",
    when($"flag" === 1 && 
         $"next_flag" === 1 && 
         $"uniqueidlead" === ($"unique_id" + 1) &&
-        !coalesce($"prev_combined", false),
-     size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
+        $"group_id" === floor(($"uniqueidlead" - 1) / 2),
+     $"combined_length" === schema.fields.length)
    .otherwise(false))
- .withColumn("can_combine",
-   when($"initial_can_combine" && coalesce(lag($"initial_can_combine", 1).over(windowSpecLead), false), 
-     false)
-   .otherwise($"initial_can_combine"))
- .withColumn("is_combined", $"can_combine")
+ .withColumn("is_combined", $"initial_can_combine")
+al combinedDf = pass1
+ // Final combination checks
+ .withColumn("can_combine", $"initial_can_combine")
  .withColumn("combined_line",
    when($"can_combine", $"test_combined")
    .otherwise($"line"))
  .withColumn("to_keep",
    $"flag" === 0 || 
    ($"flag" === 1 && $"can_combine") ||
-   ($"flag" === 1 && !$"can_combine" && $"next_flag" === 0) ||
-   ($"flag" === 1 && !$"can_combine" && !$"is_combined" && !coalesce($"prev_combined", false)))
-
-
-==========
-
-// Pass 1: Initial combination check
-val pass1 = flaggedDataFrame
- // Get values from next row
- .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpecLead))
- .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
- .withColumn("next_line", lead("line", 1).over(windowSpecLead))
- 
- // Test combined line creation
- .withColumn("test_combined",
-   when($"flag" === 1 && 
-        $"next_flag" === 1 && 
-        $"uniqueidlead" === ($"unique_id" + 1),
-     concat($"line", $"next_line"))
-   .otherwise($"line"))
-
- // Initial combination check based on schema
- .withColumn("initial_can_combine",
-   when($"flag" === 1 && 
-        $"next_flag" === 1 && 
-        $"uniqueidlead" === ($"unique_id" + 1),
-     size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
-   .otherwise(false))
-
- // Set initial combination status
- .withColumn("is_combined", $"initial_can_combine")
- 
- // Initial combined line
- .withColumn("combined_line",
-   when($"is_combined", $"test_combined")
-   .otherwise($"line"))
-
-// Pass 2: Prevention of chain combinations
-val combinedDf = pass1
- // Get previous row's combination status
- .withColumn("prev_is_combined", lag($"is_combined", 1).over(windowSpecLead))
- .withColumn("prev_uniqueidlead", lag($"uniqueidlead", 1).over(windowSpecLead))
- 
- // Check if row was used in previous combination
- .withColumn("consumed_by_prev",
-   ($"prev_is_combined" === true) && ($"prev_uniqueidlead" === $"unique_id"))
- 
- // Final can_combine check
- .withColumn("can_combine", 
-   when($"initial_can_combine" && !$"consumed_by_prev", true)
-   .otherwise(false))
- 
- // Update is_combined status
- .withColumn("is_combined", $"can_combine")
- 
- // Final combined line
- .withColumn("combined_line",
-   when($"can_combine", $"test_combined")
-   .otherwise($"line"))
- 
- // Determine which rows to keep
- .withColumn("to_keep",
-   when($"flag" === 0, true)
-   .when($"flag" === 1 && $"can_combine", true)
-   .when($"flag" === 1 && !$"can_combine" && !$"consumed_by_prev", true)
-   .otherwise(false))
+   ($"flag" === 1 && !$"can_combine" && !$"is_combined"))
