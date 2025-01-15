@@ -1,21 +1,35 @@
 val combinedDf = flaggedDataFrame
- .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
- .withColumn("next_line", lead("line", 1).over(windowSpecLead))
- .withColumn("combined_line",
-   when($"flag" === 1 && $"next_flag" === 1, concat($"line", $"next_line"))
-   .otherwise($"line"))
-.withColumn("to_keep_modified",
-  $"flag" === 0 ||  // complete records
-  ($"flag" === 1 && $"next_flag" === 1 && $"prev_flag" === 0) ||  // first record of any combined group 
-  ($"flag" === 1 && $"next_flag" === 0)  // standalone records
-)
+  // Get next row info
+  .withColumn("next_flag", lead("flag", 1).over(windowSpecLead))
+  .withColumn("next_line", lead("line", 1).over(windowSpecLead))
+  
+  // Create test combined line for schema check
+  .withColumn("test_combined",
+    when($"flag" === 1 && $"next_flag" === 1, 
+      concat($"line", $"next_line"))
+    .otherwise($"line"))
+    
+  // Check if test combined matches schema length  
+  .withColumn("can_combine",
+    when($"flag" === 1 && $"next_flag" === 1,
+      size(split($"test_combined", "\\" + effectiveReplacementChar)) === schema.fields.length)
+    .otherwise(false))
+    
+  // Final combined line only if schema matches
+  .withColumn("combined_line",
+    when($"can_combine", $"test_combined")
+    .otherwise($"line"))
 
-
-.filter(
-  // Keep valid standalone records (flag=0)
-  $"flag" === 0 ||
-  // Keep first part of combined pairs that are successfully combined
-  ($"flag" === 1 && $"is_combined" === true) ||
-  // Keep invalid/uncombined flag=1 records
-  ($"flag" === 1 && $"next_flag" === 0)
-)
+  // Keep records logic
+  .withColumn("to_keep",
+    $"flag" === 0 ||  // Complete records
+    // First part of successful combination
+    ($"flag" === 1 && $"next_flag" === 1 && $"can_combine") ||
+    // Invalid records (flag=1 but either standalone or failed combination)
+    ($"flag" === 1 && ($"next_flag" === 0 || !$"can_combine" || $"next_flag".isNull))
+  )
+  .filter($"to_keep")
+  
+  // Mark invalid records
+  .withColumn("is_invalid",
+    $"flag" === 1 && ($"next_flag" === 0 || !$"can_combine" || $"next_flag".isNull))
