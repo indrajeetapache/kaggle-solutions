@@ -1,3 +1,6 @@
+.withColumn("is_combined", 
+  when($"flag" === 1 && $"next_flag" === 1 && $"can_combine", true)
+  .otherwise(false))
 val combinedDfWithFlag = combinedDf
   .withColumn("is_invalid", 
     $"flag" === 1 && 
