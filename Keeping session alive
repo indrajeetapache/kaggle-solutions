@@ -70,3 +70,14 @@ val combinedDf = flaggedDataFrame
     ($"flag" === 1 && $"can_combine") || // First part of valid combinations
     ($"flag" === 1 && !$"can_combine" && !coalesce($"prev_combined", false)) // Standalone/invalid records
   )
+
+
+======
+12.12
+
+.withColumn("to_keep",
+  $"flag" === 0 || // Complete records
+  ($"flag" === 1 && $"can_combine") || // Keep first row of combination
+  ($"flag" === 1 && !$"can_combine" && $"next_flag" === 0) || // Last record
+  ($"flag" === 1 && !$"can_combine" && !$"is_combined" && !coalesce($"prev_combined", false)) // Standalone records that aren't part of any combination
+)
