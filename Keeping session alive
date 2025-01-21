@@ -1,18 +1,34 @@
-df_with_dq = frameworkJson_df.withColumn(
-    "dqDimension",
-    regexp_extract(
-        lower(col("technicalruleexpression")), 
-        '"dqdimension"\\s*:\\s*"([^"]*)"', 
-        1
-    )
-)
-≠======
-from pyspark.sql.functions import regexp_extract, lower, when, lit
+import argparse
 
-df_with_dq = frameworkJson_df.withColumn(
-    "dqDimension",
-    when(
-        regexp_extract(lower(col("technicalruleexpression")), '"dqdimension"\\s*:\\s*"([^"]*)"', 1) != '',
-        regexp_extract(lower(col("technicalruleexpression")), '"dqdimension"\\s*:\\s*"([^"]*)"', 1)
-    ).otherwise(None)
-)
+def get_args():
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument(
+        '--config',
+        required=True,
+        help='Path to application config file'
+    )
+    
+    parser.add_argument(
+        '--json',
+        required=True,
+        help='Path to framework json file'
+    )
+    
+    parser.add_argument(
+        '--env',
+        required=True,
+        help='Environment (dev/prod)'
+    )
+    
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    # Get command line arguments
+    args = get_args()
+    
+    # Access the arguments
+    config_file = args.config
+    json_file = args.json
+    env = args.env
+    
