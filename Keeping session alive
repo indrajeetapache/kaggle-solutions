@@ -1,78 +1,8 @@
-/** Multi-Row Combination Approach Using DataFrame Transformations
-* 
-* Example Scenario:
-* Schema Length: 10 fields
-* Input:
-* Row1: 3 fields (needs 7 more)
-* Row2: 4 fields 
-* Row3: 2 fields
-* Row4: 1 field
-* Row5: 6 fields
-* Row6: 4 fields
-* 
-* Expected Output:
-* Combined1: Row1 + Row2 + Row3 = 9 fields (kept for next iteration)
-* Combined2: Combined1 + Row4 = 10 fields (complete)
-* Combined3: Row5 + Row6 = 10 fields (complete)
-*/
-
-// Helper function to count fields
-def getFieldCount(line: Column) = size(split(line, "\\" + effectiveReplacementChar))
-
-// Function to perform one iteration of combining
-def combineIteration(df: DataFrame, iteration: Int): DataFrame = {
- val windowSpec = Window.orderBy("unique_id")
- 
- df.withColumn("iteration", lit(iteration))
-   // Get next row info
-   .withColumn("uniqueidlead", lead("unique_id", 1).over(windowSpec))
-   .withColumn("next_flag", lead("flag", 1).over(windowSpec))
-   .withColumn("next_line", lead("line", 1).over(windowSpec))
-   .withColumn("current_length", getFieldCount($"line"))
-   .withColumn("next_length", getFieldCount(coalesce($"next_line", lit(""))))
-   
-   // Calculate if combination needed and possible
-   .withColumn("combined_length", $"current_length" + $"next_length")
-   .withColumn("needs_combination", $"current_length" < schema.fields.length)
-   .withColumn("can_combine", 
-     $"needs_combination" && 
-     $"next_flag" === 1 &&
-     $"combined_length" <= schema.fields.length)
-     
-   // Combine if possible
-   .withColumn("new_line",
-     when($"can_combine",
-       concat($"line", $"next_line"))
-     .otherwise($"line"))
-   
-   // Mark rows to keep for next iteration
-   .withColumn("continue_combining",
-     getFieldCount($"new_line") < schema.fields.length)
-   
-   // Select rows for next iteration
-   .filter($"continue_combining" || 
-           ($"flag" === 0) || 
-           !$"can_combine")
-}
-
-// Perform iterations until no more combinations possible
-@tailrec
-def combineUntilComplete(df: DataFrame, iteration: Int = 1): DataFrame = {
- val result = combineIteration(df, iteration)
- 
- // Check if any rows still need combining
- val needsMoreCombining = result.filter($"continue_combining").count() > 0
- 
- if (needsMoreCombining && iteration < 10) { // Limit iterations to prevent infinite loops
-   combineUntilComplete(result, iteration + 1)
- } else {
-   result
- }
-}
-
-// Main processing
-val initialDf = flaggedDataFrame
- .withColumn("continue_combining", lit(true))
- 
-val finalDf = combineUntilComplete(initialDf)
- .filter($"flag" === 0 || !$"continue_combining")  // Keep complete rows only
+df_with_dq = frameworkJson_df.withColumn(
+    "dqDimension",
+    regexp_extract(
+        lower(col("technicalruleexpression")), 
+        '"dqdimension"\\s*:\\s*"([^"]*)"', 
+        1
+    )
+)
