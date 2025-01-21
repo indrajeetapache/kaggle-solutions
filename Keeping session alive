@@ -1,3 +1,43 @@
+
+def load_config(config_file_path):
+    """
+    Reads a framework configuration file and returns all sections and key-value pairs.
+    Args:
+        config_file_path (str): Path to the configuration file.
+    Returns:
+        dict: Nested dictionary with all configuration sections and key-value pairs.
+    Raises:
+        FileNotFoundError: If the configuration file does not exist.
+    """
+    try:
+        sparkConfigFilePath = config_file_path
+        logger.info(f"Loading configuration from: {sparkConfigFilePath}")
+        
+        # Create ConfigParser with case sensitivity
+        config = configparser.ConfigParser(interpolation=None)
+        config.optionxform = str
+        
+        # Read config file properly
+        with open(sparkConfigFilePath, 'r') as f:
+            config.read_file(f)
+        
+        # Convert to dictionary correctly
+        config_dict = {
+            section: dict(config.items(section)) 
+            for section in config.sections()
+        }
+        
+        logger.info("Configuration loaded successfully.")
+        return config_dict
+        
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found: {sparkConfigFilePath}")
+        raise
+    except Exception as e:
+        logger.error(f"Error loading configuration: {e}")
+        raise RuntimeError("Failed to load configuration") from e
+
+
 import argparse
 
 def get_args():
