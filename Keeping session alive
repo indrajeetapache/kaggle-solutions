@@ -6,3 +6,13 @@ df_with_dq = frameworkJson_df.withColumn(
         1
     )
 )
+≠======
+from pyspark.sql.functions import regexp_extract, lower, when, lit
+
+df_with_dq = frameworkJson_df.withColumn(
+    "dqDimension",
+    when(
+        regexp_extract(lower(col("technicalruleexpression")), '"dqdimension"\\s*:\\s*"([^"]*)"', 1) != '',
+        regexp_extract(lower(col("technicalruleexpression")), '"dqdimension"\\s*:\\s*"([^"]*)"', 1)
+    ).otherwise(None)
+)
