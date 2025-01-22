@@ -1,70 +1,12 @@
-from configparser import ConfigParser
-from pyspark.sql import SparkSession
-import argparse
+from pyspark import SparkFiles
+import json
 
-def parse_arguments():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', required=True, help='Path to configuration file')
-    return parser.parse_args()
+# Get the path of the JSON file
+config_file_path = SparkFiles.get("config.json")
 
-def print_config(config_path):
-    try:
-        with open(config_path, 'r') as f:
-            for line in f:
-                # Skip empty lines and comments
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    try:
-                        key, value = line.split('=', 1)
-                        print(f"{key.strip()}: {value.strip()}")
-                    except ValueError:
-                        # Handle lines without = sign
-                        print(f"Config line: {line}")
-    except Exception as e:
-        print(f"Error reading config: {e}")
+# Read and parse the JSON file
+with open(config_file_path, 'r') as config_file:
+    config_data = json.load(config_file)
 
-
-def main():
-    # Parse arguments
-    args = parse_arguments()
-    
-    # Initialize Spark
-    spark = SparkSession.builder \
-        .appName("MaterialityConfig") \
-        .getOrCreate()
-    
-    try:
-        # Read configuration
-        config_dict = read_config(args.config)
-        
-        # Broadcast config if needed
-        broadcast_config = spark.sparkContext.broadcast(config_dict)
-        
-        # Access config values
-        dataset_query = config_dict.get('dataset_balsql_query')
-        contract_key = config_dict.get('contract_key')
-        balance_columns = config_dict.get('balance_columns')
-        
-        # Your Spark processing logic here
-        print(f"Dataset Query: {dataset_query}")
-        print(f"Contract Key: {contract_key}")
-        print(f"Balance Columns: {balance_columns}")
-        
-    finally:
-        spark.stop()
-
-if __name__ == "__main__":
-    main()
-
-spark-submit \
---master yarn \
---deploy-mode cluster \
---conf spark.config.path=/path/to/bcd_serv_crd_arrg_dim_dq_collibraMaterllity.conf \
---files /path/to/bcd_serv_crd_arrg_dim_dq_collibraMaterllity.conf \
---driver-memory 4g \
---executor-memory 8g \
---executor-cores 2 \
---num-executors 4 \
---queue your_queue_name \
---name "Materiality_Analysis_Job" \
-materiality_job.py
+# Now you can use config_data in your application
+print(config_data)
