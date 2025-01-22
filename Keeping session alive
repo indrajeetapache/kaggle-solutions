@@ -7,22 +7,22 @@ def parse_arguments():
     parser.add_argument('--config', required=True, help='Path to configuration file')
     return parser.parse_args()
 
-def read_config(config_path):
+def print_config(config_path):
     try:
-        config = ConfigParser()
-        config.read(config_path)
-        
-        # Get Dataset_Input_Query section as a dictionary
-        materility_core_dict = dict(config['Dataset_Input_Query'].items())
-        
-        # Print for verification
-        print("Loaded configuration:")
-        for key, value in materility_core_dict.items():
-            print(f"{key}: {value}")
-            
-        return materility_core_dict
+        with open(config_path, 'r') as f:
+            for line in f:
+                # Skip empty lines and comments
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    try:
+                        key, value = line.split('=', 1)
+                        print(f"{key.strip()}: {value.strip()}")
+                    except ValueError:
+                        # Handle lines without = sign
+                        print(f"Config line: {line}")
     except Exception as e:
-        raise Exception(f"Error reading configuration from {config_path}: {str(e)}")
+        print(f"Error reading config: {e}")
+
 
 def main():
     # Parse arguments
