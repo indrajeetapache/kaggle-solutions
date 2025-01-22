@@ -1,36 +1,60 @@
+from configparser import ConfigParser
 from pyspark.sql import SparkSession
+import argparse
 
-def load_config(config_path):
-    # Load configuration file
-    framework_config = Load_config(config_path)
-    materiality_core_dict = {
-        key: value for key, value in 
-        framework_config['Dataset_Input_Query'].items()
-    }
-    return materiality_core_dict
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', required=True, help='Path to configuration file')
+    return parser.parse_args()
+
+def read_config(config_path):
+    try:
+        config = ConfigParser()
+        config.read(config_path)
+        
+        # Get Dataset_Input_Query section as a dictionary
+        materility_core_dict = dict(config['Dataset_Input_Query'].items())
+        
+        # Print for verification
+        print("Loaded configuration:")
+        for key, value in materility_core_dict.items():
+            print(f"{key}: {value}")
+            
+        return materility_core_dict
+    except Exception as e:
+        raise Exception(f"Error reading configuration from {config_path}: {str(e)}")
 
 def main():
-    # Initialize Spark Session
+    # Parse arguments
+    args = parse_arguments()
+    
+    # Initialize Spark
     spark = SparkSession.builder \
-        .appName("MaterialityAnalysis") \
+        .appName("MaterialityConfig") \
         .getOrCreate()
-
-    # Get config path from command line arguments
-    config_path = spark.conf.get("spark.config.path")
     
     try:
-        # Load configuration
-        config_dict = load_config(config_path)
+        # Read configuration
+        config_dict = read_config(args.config)
         
-        # Your processing logic here
-        print("Framework Configuration Loaded Successfully")
+        # Broadcast config if needed
+        broadcast_config = spark.sparkContext.broadcast(config_dict)
+        
+        # Access config values
+        dataset_query = config_dict.get('dataset_balsql_query')
+        contract_key = config_dict.get('contract_key')
+        balance_columns = config_dict.get('balance_columns')
+        
+        # Your Spark processing logic here
+        print(f"Dataset Query: {dataset_query}")
+        print(f"Contract Key: {contract_key}")
+        print(f"Balance Columns: {balance_columns}")
         
     finally:
         spark.stop()
 
 if __name__ == "__main__":
     main()
-
 
 spark-submit \
 --master yarn \
