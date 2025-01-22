@@ -1,74 +1,46 @@
+from pyspark.sql import SparkSession
 
-def load_config(config_file_path):
-    """
-    Reads a framework configuration file and returns all sections and key-value pairs.
-    Args:
-        config_file_path (str): Path to the configuration file.
-    Returns:
-        dict: Nested dictionary with all configuration sections and key-value pairs.
-    Raises:
-        FileNotFoundError: If the configuration file does not exist.
-    """
+def load_config(config_path):
+    # Load configuration file
+    framework_config = Load_config(config_path)
+    materiality_core_dict = {
+        key: value for key, value in 
+        framework_config['Dataset_Input_Query'].items()
+    }
+    return materiality_core_dict
+
+def main():
+    # Initialize Spark Session
+    spark = SparkSession.builder \
+        .appName("MaterialityAnalysis") \
+        .getOrCreate()
+
+    # Get config path from command line arguments
+    config_path = spark.conf.get("spark.config.path")
+    
     try:
-        sparkConfigFilePath = config_file_path
-        logger.info(f"Loading configuration from: {sparkConfigFilePath}")
+        # Load configuration
+        config_dict = load_config(config_path)
         
-        # Create ConfigParser with case sensitivity
-        config = configparser.ConfigParser(interpolation=None)
-        config.optionxform = str
+        # Your processing logic here
+        print("Framework Configuration Loaded Successfully")
         
-        # Read config file properly
-        with open(sparkConfigFilePath, 'r') as f:
-            config.read_file(f)
-        
-        # Convert to dictionary correctly
-        config_dict = {
-            section: dict(config.items(section)) 
-            for section in config.sections()
-        }
-        
-        logger.info("Configuration loaded successfully.")
-        return config_dict
-        
-    except FileNotFoundError:
-        logger.error(f"Configuration file not found: {sparkConfigFilePath}")
-        raise
-    except Exception as e:
-        logger.error(f"Error loading configuration: {e}")
-        raise RuntimeError("Failed to load configuration") from e
-
-
-import argparse
-
-def get_args():
-    parser = argparse.ArgumentParser()
-    
-    parser.add_argument(
-        '--config',
-        required=True,
-        help='Path to application config file'
-    )
-    
-    parser.add_argument(
-        '--json',
-        required=True,
-        help='Path to framework json file'
-    )
-    
-    parser.add_argument(
-        '--env',
-        required=True,
-        help='Environment (dev/prod)'
-    )
-    
-    return parser.parse_args()
+    finally:
+        spark.stop()
 
 if __name__ == "__main__":
-    # Get command line arguments
-    args = get_args()
-    
-    # Access the arguments
-    config_file = args.config
-    json_file = args.json
-    env = args.env
-    
+    main()
+
+
+spark-submit \
+--master yarn \
+--deploy-mode cluster \
+--conf spark.config.path=/path/to/bcd_serv_crd_arrg_dim_dq_collibraMaterllity.conf \
+--files /path/to/bcd_serv_crd_arrg_dim_dq_collibraMaterllity.conf \
+--driver-memory 4g \
+--executor-memory 8g \
+--executor-cores 2 \
+--num-executors 4 \
+--queue your_queue_name \
+--name "Materiality_Analysis_Job" \
+materiality_job.py
