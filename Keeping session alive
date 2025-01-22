@@ -1,12 +1,29 @@
-from pyspark import SparkFiles
-import json
+from pyspark.sql import SparkSession
 
-# Get the path of the JSON file
-config_file_path = SparkFiles.get("config.json")
-
-# Read and parse the JSON file
-with open(config_file_path, 'r') as config_file:
-    config_data = json.load(config_file)
-
-# Now you can use config_data in your application
-print(config_data)
+def get_spark_stage_path(spark: SparkSession, fid: str) -> str:
+    """
+    Creates the Spark staging directory path using SparkSession and file ID.
+    
+    Args:
+        spark: SparkSession object
+        fid: File ID/username
+        
+    Returns:
+        str: Complete path to the Spark staging directory
+    """
+    try:
+        # Get application ID from spark context
+        app_id = spark.sparkContext.applicationId
+        
+        # Get hostname from spark configuration
+        hostname = spark.conf.get("fs.defaultFS", "hdfs://gcgprod")
+        
+        # Construct the staging path
+        staging_path = f"{hostname}/user/{fid}/.sparkStaging/{app_id}"
+        
+        logger.info(f"Constructed spark staging path: {staging_path}")
+        return staging_path
+        
+    except Exception as e:
+        logger.error(f"Error constructing spark staging path: {e}")
+        raise RuntimeError(f"Failed to construct spark staging path: {e}")
