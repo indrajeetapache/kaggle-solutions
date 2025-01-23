@@ -1,29 +1,5 @@
-from pyspark.sql import SparkSession
+import uuid
 
-def get_spark_stage_path(spark: SparkSession, fid: str) -> str:
-    """
-    Creates the Spark staging directory path using SparkSession and file ID.
-    
-    Args:
-        spark: SparkSession object
-        fid: File ID/username
-        
-    Returns:
-        str: Complete path to the Spark staging directory
-    """
-    try:
-        # Get application ID from spark context
-        app_id = spark.sparkContext.applicationId
-        
-        # Get hostname from spark configuration
-        hostname = spark.conf.get("fs.defaultFS", "hdfs://gcgprod")
-        
-        # Construct the staging path
-        staging_path = f"{hostname}/user/{fid}/.sparkStaging/{app_id}"
-        
-        logger.info(f"Constructed spark staging path: {staging_path}")
-        return staging_path
-        
-    except Exception as e:
-        logger.error(f"Error constructing spark staging path: {e}")
-        raise RuntimeError(f"Failed to construct spark staging path: {e}")
+def generate_numeric_id():
+    # Generate UUID and convert to int
+    return uuid.uuid4().int & (1<<64)-1  # Returns a 64-bit integer
