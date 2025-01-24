@@ -2,4 +2,4 @@ SELECT stg.*
 FROM stg 
 LEFT ANTI JOIN std
 ON stg.case_id = std.case_id 
-AND stg.audit_load_Dt = std.sig_count
+AND stg.audit_load_Dt = date_sub(CAST(std.load_Date AS DATE), 1)
