@@ -1,13 +1,13 @@
 SELECT COUNT(*) FROM (
     SELECT o_caseid 
     FROM gcgdlknausg_pegacsm_t_db.pega_paf_index_txn 
-    WHERE audit_load_dt >= {snapshot_date} 
-    AND business_date = {snapshot_date} 
+    WHERE audit_load_dt >= 20240123 
+    AND business_date = 20240123 
     UNION ALL
     SELECT case_id 
     FROM gcgdomnnausd_brndcrds_t_db.disp_mstr_std t 
     LEFT SEMI JOIN gcgdlknausg_pegacsm_t_db.pega_paf_index_txn p 
     ON t.case_id = p.o_caseid 
-    AND t.snpsh_dt = DATE_SUB(CAST({snapshot_date} AS DATE), 1)
-    AND p.audit_load_dt = {snapshot_date}
-) combined_data
+    AND t.snpsh_dt = 20240122
+    AND p.audit_load_dt >= 20240123
+) combined_data;
