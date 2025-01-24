@@ -3,25 +3,17 @@ def generate_materiality_output_json(df: DataFrame, materility_core_dict: dict) 
     materility_core_passthrough_dict = materility_core_dict['passthrough']
     materiality_output_dict = OrderedDict()
     
-    # Initialize body with passthrough dict
-    materiality_output_dict['body'] = OrderedDict(materility_core_passthrough_dict)
-    materiality_output_dict['body']['rules'] = []
-    materiality_output_dict['body']['dqSegmentationScoreSummary'] = []
-
+    final_body = OrderedDict(materility_core_passthrough_dict)
+    
     for row in rows:
         if row.parent_element == 'body':
-            materiality_output_dict['body'].update(json.loads(json.loads(row.score_summary[0])['dataset'][0]))
+            final_body.update(json.loads(json.loads(row.score_summary[0])['dataset'][0]))
         elif row.parent_element == 'rules':
             rule_lvl_metrics = json.loads(row.score_summary[0])['by_attribute_and_rule']
-            materiality_output_dict['body']['rules'] = [json.loads(metric) for metric in rule_lvl_metrics]
+            final_body['rules'] = [json.loads(metric) for metric in rule_lvl_metrics]
         elif row.parent_element == 'dqSegmentationScoreSummary':
             segment_lvl_metrics = [json.loads(summary) for summary in row.score_summary]
-            materiality_output_dict['body']['dqSegmentationScoreSummary'] = process_segment_level_metrics(segment_lvl_metrics)
-
-    # Ensure proper order
-    materiality_output_dict['body'] = OrderedDict([
-        ('rules', materiality_output_dict['body'].get('rules', [])),
-        ('dqSegmentationScoreSummary', materiality_output_dict['body'].get('dqSegmentationScoreSummary', []))
-    ])
-
+            final_body['dqSegmentationScoreSummary'] = process_segment_level_metrics(segment_lvl_metrics)
+    
+    materiality_output_dict['body'] = final_body
     return json.dumps(materiality_output_dict, indent=4)
