@@ -1,5 +1,13 @@
-SELECT stg.*
-FROM stg 
-LEFT ANTI JOIN std
-ON stg.case_id = std.case_id 
-AND stg.audit_load_Dt = date_sub(CAST(std.load_Date AS DATE), 1)
+SELECT COUNT(*) FROM (
+    SELECT o_caseid 
+    FROM gcgdlknausg_pegacsm_t_db.pega_paf_index_txn 
+    WHERE audit_load_dt >= {snapshot_date} 
+    AND business_date = {snapshot_date} 
+    UNION ALL
+    SELECT case_id 
+    FROM gcgdomnnausd_brndcrds_t_db.disp_mstr_std t 
+    LEFT ANTI JOIN gcgdlknausg_pegacsm_t_db.pega_paf_index_txn p 
+    ON t.case_id = p.o_caseid 
+    AND t.snpsh_dt = DATE_SUB(CAST({snapshot_date} AS DATE), 1)
+    AND p.audit_load_dt = {snapshot_date}
+) combined_data
