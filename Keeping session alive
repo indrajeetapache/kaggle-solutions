@@ -51,3 +51,14 @@ def generate_materiality_output_json(df: DataFrame, materility_core_dict: dict) 
    }]
    
    return json.dumps(materiality_output_dict, indent=4)
+
+return json.dumps({
+       'record': {
+           'value': {
+               'event': {
+                   'header': OrderedDict(header_dict),
+                   'body': OrderedDict(final_body)
+               }
+           }
+       }
+   }, indent=4)
