@@ -17,3 +17,37 @@ def generate_materiality_output_json(df: DataFrame, materility_core_dict: dict) 
     
     materiality_output_dict['body'] = final_body
     return json.dumps(materiality_output_dict, indent=4)
+========
+def generate_materiality_output_json(df: DataFrame, materility_core_dict: dict) -> str:
+   rows = df.collect()
+   materility_core_passthrough_dict = materility_core_dict['passthrough']
+   materiality_output_dict = OrderedDict()
+   
+   header_fields = ['name', 'version', 'producerCSI', 'channel', 'countryCode', 
+                   'businessCode', 'domain', 'uuid', 'sid', 'businessTransactionTime',
+                   'eventTimeStamp']
+   
+   # Split into header and body more concisely 
+   header_dict = {k:v for k,v in materility_core_passthrough_dict.items() if k in header_fields}
+   final_body = {k:v for k,v in materility_core_passthrough_dict.items() if k not in header_fields}
+   
+   for row in rows:
+       if row.parent_element == 'body':
+           final_body.update(json.loads(json.loads(row.score_summary[0])['dataset'][0]))
+       elif row.parent_element == 'rules':
+           rule_lvl_metrics = json.loads(row.score_summary[0])['by_attribute_and_rule']
+           final_body['rules'] = [json.loads(metric) for metric in rule_lvl_metrics]
+       elif row.parent_element == 'dqSegmentationScoreSummary':
+           segment_lvl_metrics = [json.loads(summary) for summary in row.score_summary]
+           final_body['dqSegmentationScoreSummary'] = process_segment_level_metrics(segment_lvl_metrics)
+   
+   materiality_output_dict['records'] = [{
+       'value': {
+           'event': {
+               'header': OrderedDict(header_dict),
+               'body': OrderedDict(final_body)
+           }
+       }
+   }]
+   
+   return json.dumps(materiality_output_dict, indent=4)
