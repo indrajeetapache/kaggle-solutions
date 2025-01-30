@@ -1,8 +1,1 @@
-SELECT 
-    audit_load_dt,
-    audit_record_hash
-FROM 
-    gcganamfrmu_work.mf_fw_fixedlength_test
-WHERE 
-    audit_load_dt IN (20250129, 20250128, 20250127, 20250126, 20250125, 20250124, 20250123)
-    AND audit_record_hash LIKE '%|' || ANY(ARRAY['173821839701', '173821839702', '173821839703']);
+
