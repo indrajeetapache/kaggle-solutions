@@ -1,6 +1,2 @@
-spark-submit \
-  --conf spark.network.timeout=800s \
-  --conf spark.executor.heartbeatInterval=400s \
-  --conf spark.rpc.askTimeout=600s \
-  --conf spark.rpc.lookupTimeout=600s \
+
 
