@@ -1,2 +1,19 @@
-
+SELECT 
+    audit_load_dt,
+    audit_run_id,
+    audit_record_hash,
+    CASE 
+        WHEN audit_run_id IN ('169912|stg|auid.dat|mf_fw_fixedlength_test|173821839770') 
+        THEN true 
+        ELSE false 
+    END AS audit_runid_exists,
+    CASE 
+        WHEN audit_record_hash LIKE '%|' || ANY(ARRAY['173821839701', '173821839702', '173821839703'])
+        THEN true 
+        ELSE false 
+    END AS audit_record_hash_exists,
+    COUNT(*) OVER (PARTITION BY audit_run_id) as file_count
+FROM gcganamfirmu_work.mf_fw_fixedlength_test 
+WHERE audit_load_dt IN 
+    (20250129,20250128,20250127,20250126,20250125,20250124,20250123)
 
