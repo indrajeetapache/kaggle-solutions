@@ -21,3 +21,10 @@ df = spark.read \
     .option("header", True) \
     .option("treatEmptyValuesAsNulls", "false") \  # Don't treat empty values as nulls
     .csv("path/to/file.csv")
+with open(filepath2, 'r') as f:
+    print(repr(f.read()))
+df7 = spark.read \
+    .option("header", True) \
+    .option("nullValue", "\0") \  # Using null byte as nullValue
+    .option("emptyValue", "") \
+    .csv(filepath2)
