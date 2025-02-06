@@ -1,9 +1,5 @@
-# Sample CSV content:
-# Name,City
-# John,
-# ,Paris
-
-df = spark.read.option("header", True) \ 
-               .option("nullValue", "SomeUnusedString") \ 
-               .csv("data.csv")
-df.show()
+df = spark.read \
+    .option("header", True) \
+    .option("nullValue", "SomeUnusedString") \
+    .option("emptyValue", "") \
+    .csv("data.csv")
