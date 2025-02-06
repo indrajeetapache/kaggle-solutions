@@ -1,41 +1,4 @@
-python
-# Create source dataframe
-source_data = [(113, "file_1123", 50)]  # Add more rows as needed
-source_df = spark.createDataFrame(source_data, ["checksum", "audit_run_id", "file_count"])
-source_df.createOrReplaceTempView("source_data")
 
-# Optimized window query
-window_query = """
-SELECT 
-    file_checksum,
-    audit_run_id,
-    target_count,
-    source_file_count as source_count,
-    CASE 
-        WHEN target_count = source_file_count THEN 'EXACT_MATCH'
-        WHEN target_count % source_file_count = 0 THEN 'MULTIPLE_MATCH'
-        ELSE 'MISMATCH'
-    END as count_validation,
-    SUM(target_count) OVER (PARTITION BY file_checksum) as total_checksum_count,
-    COUNT(DISTINCT audit_run_id) OVER (PARTITION BY file_checksum) as distinct_runids
-FROM (
-    SELECT 
-        split(t.audit_record_hash, '\\|')[2] as file_checksum,
-        t.audit_run_id,
-        COUNT(*) as target_count,
-        MAX(s.file_count) as source_file_count  -- Using MAX instead of first_value
-    FROM gcganamfirmu_work.mf_fw_fixedlength_test t
-    LEFT JOIN source_data s 
-        ON split(t.audit_record_hash, '\\|')[2] = s.checksum
-    WHERE t.audit_load_dt IN 
-        (20250129, 20250128, 20250127, 20250126, 20250125, 20250124, 20250123)
-    GROUP BY 
-        split(t.audit_record_hash, '\\|')[2],
-        t.audit_run_id
-) base_counts
-ORDER BY file_checksum, audit_run_id
-"""
-
-result_df = spark.sql(window_query)
-result_df.show(truncate=False)
-```
+# Name,City
+# John,
+# ,Paris
