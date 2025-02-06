@@ -3,3 +3,11 @@ df = spark.read \
     .option("nullValue", "SomeUnusedString") \
     .option("emptyValue", "") \
     .csv("data.csv")
+
+
+df = spark.read \
+    .option("header", True) \
+    .option("nullValue", "UNUSED_PLACEHOLDER") \  # Set to a value not in your data
+    .option("emptyValue", "") \                    # Explicitly map empty CSV fields to ""
+    .csv("path/to/file.csv")
+
