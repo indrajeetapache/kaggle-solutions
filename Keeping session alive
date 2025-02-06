@@ -11,3 +11,13 @@ df = spark.read \
     .option("emptyValue", "") \                    # Explicitly map empty CSV fields to ""
     .csv("path/to/file.csv")
 
+
+df = spark.read \
+    .option("header", True) \
+    .option("emptyValue", "") \  # This will convert empty fields to empty strings
+    .csv("path/to/file.csv")
+
+df = spark.read \
+    .option("header", True) \
+    .option("treatEmptyValuesAsNulls", "false") \  # Don't treat empty values as nulls
+    .csv("path/to/file.csv")
