@@ -28,3 +28,7 @@ df7 = spark.read \
     .option("nullValue", "\0") \  # Using null byte as nullValue
     .option("emptyValue", "") \
     .csv(filepath2)
+df = spark.read \
+    .option("header", True) \
+    .option("nullValue", "\u0000") \  # Using a character that won't appear in your data
+    .csv("sample.data")
