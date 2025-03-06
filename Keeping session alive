@@ -1,13 +1,1 @@
-val sparkExcelReadConfiguration = Map(
-  "dataAddress" -> "Sheet1!",
-  "header" -> "true",
-  "useHeader" -> "true",
-  "maxRowsInMemory" -> "20",
-  "treatEmptyValuesAsNulls" -> "false"
-)
 
-// Try with fewer options to avoid functionality that requires SparseBitSet
-val df = spark.read
-  .format("com.crealytics.spark.excel")
-  .options(sparkExcelReadConfiguration)
-  .load("/data/gcganamfrmu/raw/169912/excel/Book1.xlsx")
