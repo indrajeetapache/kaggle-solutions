@@ -1,4 +1,16 @@
-materility_df_dict['failedrecords_df'] = frameworkJson_df.select(*materiality_core_dict["json_column_names"].values())\
-    .join(materility_df_dict['failedrecords_df'],
-          F.trim(F.lower(frameworkJson_df["technicalruleId"])) == F.trim(F.lower(materility_df_dict['failedrecords_df']["rule_uuid"])),
-          "left")  # Changed from "inner" to "left"
+val sparkExcelReadConfiguration = Map(
+  "dataAddress" -> "A1", // Explicitly define the starting cell
+  "header" -> "true",
+  "treatEmptyValuesAsNulls" -> "false", // Change this to false to maintain structure
+  "inferSchema" -> "false", // Disable automatic schema inference
+  "useHeader" -> "true", // Use the first row as header
+  "excerptSize" -> "0", // Disable excerpting which can cause misalignment
+  "maxRowsInMemory" -> "20", // Increase if you have a large file
+  "workbookPassword" -> "" // Only if your file is password protected
+)
+
+// Read with the modified configuration
+val df = spark.read
+  .format("com.crealytics.spark.excel")
+  .options(sparkExcelReadConfiguration)
+  .load("your_file_path.xlsx")
