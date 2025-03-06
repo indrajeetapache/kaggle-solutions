@@ -9,6 +9,17 @@ val sparkExcelReadConfiguration = Map(
   "workbookPassword" -> "" // Only if your file is password protected
 )
 
+val sparkExcelReadConfiguration = Map(
+  "dataAddress" -> "A1", // Explicitly define the starting cell
+  "header" -> "true",
+  "treatEmptyValuesAsNulls" -> "false",
+  "inferSchema" -> "false",
+  "useHeader" -> "true",
+  "excerptSize" -> "0",
+  "maxRowsInMemory" -> "20",
+  "sheetName" -> "data" // I can see from Image 3 that your sheet is named "data"
+)
+
 // Read with the modified configuration
 val df = spark.read
   .format("com.crealytics.spark.excel")
