@@ -1,27 +1,15 @@
 val sparkExcelReadConfiguration = Map(
   "dataAddress" -> "A1", // Explicitly define the starting cell
   "header" -> "true",
-  "treatEmptyValuesAsNulls" -> "false", // Change this to false to maintain structure
-  "inferSchema" -> "false", // Disable automatic schema inference
-  "useHeader" -> "true", // Use the first row as header
-  "excerptSize" -> "0", // Disable excerpting which can cause misalignment
-  "maxRowsInMemory" -> "20", // Increase if you have a large file
-  "workbookPassword" -> "" // Only if your file is password protected
-)
-
-val sparkExcelReadConfiguration = Map(
-  "dataAddress" -> "A1", // Explicitly define the starting cell
-  "header" -> "true",
   "treatEmptyValuesAsNulls" -> "false",
   "inferSchema" -> "false",
   "useHeader" -> "true",
   "excerptSize" -> "0",
   "maxRowsInMemory" -> "20",
-  "sheetName" -> "data" // I can see from Image 3 that your sheet is named "data"
+  "sheetName" -> "Sheet1" // Exact match with case sensitivity
 )
 
-// Read with the modified configuration
 val df = spark.read
   .format("com.crealytics.spark.excel")
   .options(sparkExcelReadConfiguration)
-  .load("your_file_path.xlsx")
+  .load("/data/gcganamfrmu/raw/169912/excel/Book1.xlsx")
