@@ -1,14 +1,12 @@
 val sparkExcelReadConfiguration = Map(
-  "dataAddress" -> "A1", // Explicitly define the starting cell
+  "dataAddress" -> "Sheet1!",
   "header" -> "true",
-  "treatEmptyValuesAsNulls" -> "false",
-  "inferSchema" -> "false",
   "useHeader" -> "true",
-  "excerptSize" -> "0",
   "maxRowsInMemory" -> "20",
-  "sheetName" -> "Sheet1" // Exact match with case sensitivity
+  "treatEmptyValuesAsNulls" -> "false"
 )
 
+// Try with fewer options to avoid functionality that requires SparseBitSet
 val df = spark.read
   .format("com.crealytics.spark.excel")
   .options(sparkExcelReadConfiguration)
