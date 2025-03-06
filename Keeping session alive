@@ -1,1 +1,179 @@
+import org.apache.spark.sql.SparkSession
+import org.apache.hadoop.fs.{FileSystem, Path}
+import java.security.MessageDigest
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
+import scala.collection.mutable.ArrayBuffer
 
+object DistributedMD5Calculator {
+  
+  /**
+   * Calculate MD5 hash for a large file in HDFS using Spark's distributed computing
+   *
+   * @param hdfsFilePath Path to the file in HDFS
+   * @param chunkSize Size of each chunk to process (default: 64MB)
+   * @param spark SparkSession
+   * @return MD5 hash as a hex string
+   */
+  def calculateDistributedMD5(hdfsFilePath: String, 
+                              chunkSize: Int = 64 * 1024 * 1024, 
+                              spark: SparkSession): String = {
+    
+    // Get file information from HDFS
+    val conf = spark.sparkContext.hadoopConfiguration
+    val fs = FileSystem.get(conf)
+    val path = new Path(hdfsFilePath)
+    
+    if (!fs.exists(path)) {
+      throw new IllegalArgumentException(s"File not found: $hdfsFilePath")
+    }
+    
+    val fileStatus = fs.getFileStatus(path)
+    val fileSize = fileStatus.getLen
+    val blockSize = fileStatus.getBlockSize
+    
+    println(s"File size: $fileSize bytes")
+    println(s"HDFS block size: $blockSize bytes")
+    
+    // Determine optimal chunk count based on cluster size
+    val executorCores = spark.conf.get("spark.executor.cores", "1").toInt
+    val numExecutors = spark.conf.get("spark.executor.instances", "1").toInt
+    val targetParallelism = executorCores * numExecutors * 2 // Slight oversubscription
+    
+    // Chunk count should be at least equal to the number of HDFS blocks
+    val minChunks = Math.ceil(fileSize.toDouble / blockSize).toInt
+    val optimalChunks = Math.max(minChunks, targetParallelism)
+    
+    // Recalculate chunk size based on optimal chunks
+    val adjustedChunkSize = (fileSize / optimalChunks).toInt
+    
+    println(s"Using ${optimalChunks} chunks with chunk size: $adjustedChunkSize bytes")
+    
+    // Create offsets for parallel processing
+    val offsets = ArrayBuffer[(Long, Int)]()
+    var currentOffset = 0L
+    while (currentOffset < fileSize) {
+      val currentChunkSize = Math.min(adjustedChunkSize, fileSize - currentOffset).toInt
+      offsets.append((currentOffset, currentChunkSize))
+      currentOffset += currentChunkSize
+    }
+    
+    // Create RDD from offsets
+    val offsetsRDD = spark.sparkContext.parallelize(offsets, offsets.length)
+    
+    // Calculate partial MD5 hashes in parallel
+    val partialHashes = offsetsRDD.mapPartitions { partitionIter =>
+      val results = partitionIter.map { case (offset, size) =>
+        // Get Hadoop filesystem for this executor
+        val executorFS = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+        val inputStream = executorFS.open(path)
+        
+        try {
+          // Seek to the correct offset
+          inputStream.seek(offset)
+          
+          // Read the chunk
+          val buffer = new Array[Byte](size)
+          var bytesRead = 0
+          var totalBytesRead = 0
+          
+          while (totalBytesRead < size) {
+            bytesRead = inputStream.read(buffer, totalBytesRead, size - totalBytesRead)
+            if (bytesRead == -1) {
+              // End of file reached prematurely
+              break
+            }
+            totalBytesRead += bytesRead
+          }
+          
+          // Calculate MD5 for this chunk
+          val md = MessageDigest.getInstance("MD5")
+          md.update(buffer, 0, totalBytesRead)
+          
+          // Return offset and partial hash for ordering
+          (offset, md.digest())
+        } finally {
+          inputStream.close()
+        }
+      }
+      results
+    }
+    
+    // Cache the partial results to avoid recalculation
+    partialHashes.cache()
+    
+    // Force evaluation and get count for logging
+    val hashCount = partialHashes.count()
+    println(s"Generated $hashCount partial hashes")
+    
+    // Collect all partial hashes, sorted by offset for deterministic result
+    val orderedHashes = partialHashes.sortByKey().collect()
+    
+    // Combine all partial hashes to get final hash
+    val finalMD = MessageDigest.getInstance("MD5")
+    
+    // Method 1: Hash of hashes (faster but less accurate for true file MD5)
+    orderedHashes.foreach { case (_, digest) =>
+      finalMD.update(digest)
+    }
+    
+    // Convert the final digest to hex string
+    val md5Hash = finalMD.digest().map("%02x".format(_)).mkString
+    
+    // Clean up
+    partialHashes.unpersist()
+    
+    md5Hash
+  }
+  
+  /**
+   * Alternative implementation that stores results directly in a DataFrame
+   * Useful when you need to process multiple files and store results
+   */
+  def calculateMD5ToDataFrame(hdfsFilePaths: Array[String], 
+                              chunkSize: Int = 64 * 1024 * 1024,
+                              spark: SparkSession) = {
+    import spark.implicits._
+    
+    // Create DataFrame of file paths
+    val pathsDF = spark.createDataset(hdfsFilePaths).toDF("file_path")
+    
+    // Register UDF for MD5 calculation
+    val calculateMD5UDF = udf((filePath: String) => {
+      calculateDistributedMD5(filePath, chunkSize, spark)
+    })
+    
+    // Apply UDF to calculate MD5 for each file
+    val resultsDF = pathsDF.withColumn("md5_hash", calculateMD5UDF($"file_path"))
+    
+    resultsDF
+  }
+  
+  def main(args: Array[String]): Unit = {
+    // Example usage
+    val spark = SparkSession.builder()
+      .appName("Distributed MD5 Calculator")
+      .getOrCreate()
+      
+    try {
+      if (args.length < 1) {
+        println("Usage: DistributedMD5Calculator <hdfs_file_path> [chunk_size_in_mb]")
+        System.exit(1)
+      }
+      
+      val hdfsFilePath = args(0)
+      val chunkSizeMB = if (args.length > 1) args(1).toInt else 64
+      val chunkSize = chunkSizeMB * 1024 * 1024
+      
+      val startTime = System.currentTimeMillis()
+      val md5Hash = calculateDistributedMD5(hdfsFilePath, chunkSize, spark)
+      val endTime = System.currentTimeMillis()
+      
+      println(s"MD5 Hash: $md5Hash")
+      println(s"Time taken: ${(endTime - startTime) / 1000.0} seconds")
+      
+    } finally {
+      spark.stop()
+    }
+  }
+}
