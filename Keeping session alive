@@ -1,3 +1,20 @@
+spark3-submit \
+  --class com.citi.fileingestionframework.driver.DistributedMD5Calculator \
+  --master yarn \
+  --deploy-mode cluster \
+  --conf spark.executor.instances=12 \
+  --conf spark.yarn.queue=root.kyccr_651_yarn \
+  --conf spark.driver.memory=12g \
+  --conf spark.executor.memory=4g \
+  --conf spark.executor.cores=4 \
+  --conf spark.yarn.maxAppAttempts=1 \
+  --conf spark.dynamicAllocation.enabled=false \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.executor.memoryOverhead=2g \
+  --conf spark.speculation=true \
+  --conf spark.task.maxFailures=4 \
+  s3a://1/gcanamfmd/algorithm/md5/file_ingestion_framework-4.0-jar-with-dependencies.jar \
+  /data/gcanamfmd/work/sr24819/target_file_100GB.dat
 package com.citi.fileingestionframework.driver
 
 import org.apache.spark.sql.SparkSession
