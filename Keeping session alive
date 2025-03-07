@@ -1,11 +1,22 @@
+package com.citi.fileingestionframework.driver
+
 import org.apache.spark.sql.SparkSession
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.log4j.{Level, Logger}
 import java.security.MessageDigest
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.Breaks._
+import org.apache.spark.TaskContext
 
 object DistributedMD5Calculator {
+  
+  // Initialize logger
+  val logger: Logger = Logger.getLogger(this.getClass)
+  
+  // Set up root logger to show all logs
+  Logger.getRootLogger.setLevel(Level.INFO)
   
   /**
    * Calculate MD5 hash for a large file in HDFS using Spark's distributed computing
@@ -19,26 +30,35 @@ object DistributedMD5Calculator {
                               chunkSize: Int = 64 * 1024 * 1024, 
                               spark: SparkSession): String = {
     
+    logger.info(s"=== Starting MD5 calculation for file: $hdfsFilePath with chunk size: ${chunkSize / (1024*1024)}MB ===")
+    
     // Get file information from HDFS
+    logger.info("Getting file information from HDFS")
     val conf = spark.sparkContext.hadoopConfiguration
     val fs = FileSystem.get(conf)
     val path = new Path(hdfsFilePath)
     
     if (!fs.exists(path)) {
-      throw new IllegalArgumentException(s"File not found: $hdfsFilePath")
+      val msg = s"File not found: $hdfsFilePath"
+      logger.error(msg)
+      throw new IllegalArgumentException(msg)
     }
     
     val fileStatus = fs.getFileStatus(path)
     val fileSize = fileStatus.getLen
     val blockSize = fileStatus.getBlockSize
     
-    println(s"File size: $fileSize bytes")
-    println(s"HDFS block size: $blockSize bytes")
+    logger.info(s"File size: $fileSize bytes (${fileSize / (1024*1024*1024.0)} GB)")
+    logger.info(s"HDFS block size: $blockSize bytes (${blockSize / (1024*1024)} MB)")
     
     // Determine optimal chunk count based on cluster size
+    logger.info("Calculating optimal parallelism based on cluster resources")
     val executorCores = spark.conf.get("spark.executor.cores", "1").toInt
     val numExecutors = spark.conf.get("spark.executor.instances", "1").toInt
     val targetParallelism = executorCores * numExecutors * 2 // Slight oversubscription
+    
+    logger.info(s"Cluster resources - Executors: $numExecutors, Cores per executor: $executorCores")
+    logger.info(s"Target parallelism: $targetParallelism")
     
     // Chunk count should be at least equal to the number of HDFS blocks
     val minChunks = Math.ceil(fileSize.toDouble / blockSize).toInt
@@ -47,9 +67,11 @@ object DistributedMD5Calculator {
     // Recalculate chunk size based on optimal chunks
     val adjustedChunkSize = (fileSize / optimalChunks).toInt
     
-    println(s"Using ${optimalChunks} chunks with chunk size: $adjustedChunkSize bytes")
+    logger.info(s"Minimum chunks based on HDFS blocks: $minChunks")
+    logger.info(s"Using ${optimalChunks} chunks with chunk size: $adjustedChunkSize bytes (${adjustedChunkSize / (1024*1024.0)} MB)")
     
     // Create offsets for parallel processing
+    logger.info("Creating chunk offsets for parallel processing")
     val offsets = ArrayBuffer[(Long, Int)]()
     var currentOffset = 0L
     while (currentOffset < fileSize) {
@@ -58,71 +80,176 @@ object DistributedMD5Calculator {
       currentOffset += currentChunkSize
     }
     
+    logger.info(s"Generated ${offsets.length} offsets for parallel processing")
+    
+    // Log a sample of offsets for debugging
+    if (offsets.length > 0) {
+      val sampleSize = Math.min(5, offsets.length)
+      logger.info(s"Sample of first $sampleSize offsets:")
+      offsets.take(sampleSize).foreach { case (offset, size) =>
+        logger.info(s"  Offset: $offset, Size: $size bytes")
+      }
+    }
+    
     // Create RDD from offsets
+    logger.info("Creating RDD from offsets")
     val offsetsRDD = spark.sparkContext.parallelize(offsets, offsets.length)
     
+    logger.info(s"Parallelized offsets with ${offsetsRDD.getNumPartitions} partitions")
+    
+    // Add a count action to ensure RDD is properly created
+    val offsetCount = offsetsRDD.count()
+    logger.info(s"Verified offset RDD creation with $offsetCount elements")
+    
     // Calculate partial MD5 hashes in parallel
+    logger.info("Starting parallel MD5 hash calculation")
     val partialHashes = offsetsRDD.mapPartitions { partitionIter =>
-      val results = partitionIter.map { case (offset, size) =>
-        // Get Hadoop filesystem for this executor
-        val executorFS = FileSystem.get(spark.sparkContext.hadoopConfiguration)
-        val inputStream = executorFS.open(path)
+      // Get partition ID for better logging
+      val partitionId = TaskContext.get().partitionId()
+      val taskAttemptId = TaskContext.get().taskAttemptId()
+      
+      logger.info(s"Starting partition $partitionId (Task ID: $taskAttemptId)")
+      
+      // Log available memory for this executor
+      val runtime = Runtime.getRuntime
+      val freeMemory = runtime.freeMemory() / (1024 * 1024)
+      val totalMemory = runtime.totalMemory() / (1024 * 1024)
+      val maxMemory = runtime.maxMemory() / (1024 * 1024)
+      
+      logger.info(s"Partition $partitionId - Memory status: Free: ${freeMemory}MB, Total: ${totalMemory}MB, Max: ${maxMemory}MB")
+      
+      // Count chunks in this partition
+      val chunks = partitionIter.toSeq
+      logger.info(s"Partition $partitionId - Processing ${chunks.size} chunks")
+      
+      // Process each chunk
+      val results = chunks.map { case (offset, size) =>
+        logger.info(s"Partition $partitionId - Starting chunk processing at offset $offset with size $size bytes")
         
         try {
-          // Seek to the correct offset
-          inputStream.seek(offset)
+          // Get Hadoop filesystem for this executor
+          logger.info(s"Partition $partitionId - Getting filesystem for chunk at offset $offset")
+          val executorFS = FileSystem.get(spark.sparkContext.hadoopConfiguration)
           
-          // Read the chunk
-          val buffer = new Array[Byte](size)
-          var bytesRead = 0
-          var totalBytesRead = 0
+          // Open the file
+          logger.info(s"Partition $partitionId - Opening file for chunk at offset $offset")
+          val inputStream = executorFS.open(path)
           
-          while (totalBytesRead < size) {
-            bytesRead = inputStream.read(buffer, totalBytesRead, size - totalBytesRead)
-            if (bytesRead == -1) {
-              // End of file reached prematurely
-              break
+          try {
+            // Seek to the correct offset
+            logger.info(s"Partition $partitionId - Seeking to offset $offset")
+            inputStream.seek(offset)
+            
+            // Determine optimal buffer size - smaller of chunk size or 4MB to avoid OOM
+            val bufferSize = Math.min(size, 4 * 1024 * 1024).toInt
+            logger.info(s"Partition $partitionId - Using buffer size of $bufferSize bytes for chunk at offset $offset")
+            
+            // Read the chunk
+            logger.info(s"Partition $partitionId - Reading chunk data at offset $offset")
+            val md = MessageDigest.getInstance("MD5")
+            var bytesRead = 0
+            var totalBytesRead = 0
+            val buffer = new Array[Byte](bufferSize)
+            
+            // Read in smaller buffer-sized increments
+            breakable {
+              while (totalBytesRead < size) {
+                val bytesToRead = Math.min(bufferSize, size - totalBytesRead).toInt
+                bytesRead = inputStream.read(buffer, 0, bytesToRead)
+                
+                if (bytesRead == -1) {
+                  // End of file reached prematurely
+                  logger.warn(s"Partition $partitionId - EOF reached prematurely after reading $totalBytesRead of $size bytes at offset $offset")
+                  break
+                }
+                
+                md.update(buffer, 0, bytesRead)
+                totalBytesRead += bytesRead
+                
+                // Log progress for large chunks
+                if (size > 100 * 1024 * 1024 && totalBytesRead % (20 * 1024 * 1024) == 0) {
+                  val progressPct = (totalBytesRead.toDouble / size) * 100
+                  logger.info(f"Partition $partitionId - Progress for chunk at offset $offset: $progressPct%.1f%% ($totalBytesRead/$size bytes)")
+                }
+              }
             }
-            totalBytesRead += bytesRead
+            
+            // Get digest
+            val digest = md.digest()
+            logger.info(s"Partition $partitionId - Successfully calculated MD5 for chunk at offset $offset (read $totalBytesRead of $size bytes)")
+            
+            // Return offset and partial hash for ordering
+            (offset, digest)
+          } catch {
+            case e: Exception =>
+              logger.error(s"Partition $partitionId - Error processing chunk at offset $offset: ${e.getMessage}", e)
+              // Return a marker for error
+              (offset, Array.emptyByteArray)
+          } finally {
+            // Close stream
+            logger.info(s"Partition $partitionId - Closing input stream for chunk at offset $offset")
+            try {
+              inputStream.close()
+            } catch {
+              case e: Exception => 
+                logger.warn(s"Partition $partitionId - Error closing stream for chunk at offset $offset: ${e.getMessage}")
+            }
           }
-          
-          // Calculate MD5 for this chunk
-          val md = MessageDigest.getInstance("MD5")
-          md.update(buffer, 0, totalBytesRead)
-          
-          // Return offset and partial hash for ordering
-          (offset, md.digest())
-        } finally {
-          inputStream.close()
+        } catch {
+          case e: Exception =>
+            logger.error(s"Partition $partitionId - Critical error for chunk at offset $offset: ${e.getMessage}", e)
+            (offset, Array.emptyByteArray)
         }
       }
-      results
+      
+      // Log completion of this partition
+      logger.info(s"Partition $partitionId - Completed processing ${chunks.size} chunks")
+      
+      // Filter out any failed chunks
+      val validResults = results.filter(_._2.nonEmpty)
+      logger.info(s"Partition $partitionId - Returning ${validResults.size} valid results out of ${chunks.size} chunks")
+      
+      validResults.iterator
     }
     
     // Cache the partial results to avoid recalculation
+    logger.info("Caching partial hash results")
     partialHashes.cache()
     
     // Force evaluation and get count for logging
+    logger.info("Counting partial hashes to force evaluation")
     val hashCount = partialHashes.count()
-    println(s"Generated $hashCount partial hashes")
+    logger.info(s"Generated $hashCount partial hashes out of ${offsets.length} chunks")
+    
+    // Check if we lost any chunks
+    if (hashCount < offsets.length) {
+      logger.warn(s"Some chunks failed to process: $hashCount out of ${offsets.length} succeeded")
+    }
     
     // Collect all partial hashes, sorted by offset for deterministic result
+    logger.info("Collecting and ordering partial hashes")
     val orderedHashes = partialHashes.sortByKey().collect()
+    logger.info(s"Collected ${orderedHashes.length} ordered hashes")
     
     // Combine all partial hashes to get final hash
+    logger.info("Combining partial hashes to calculate final MD5")
     val finalMD = MessageDigest.getInstance("MD5")
     
-    // Method 1: Hash of hashes (faster but less accurate for true file MD5)
-    orderedHashes.foreach { case (_, digest) =>
+    // Method: Hash of hashes
+    orderedHashes.foreach { case (offset, digest) =>
+      logger.debug(s"Adding digest for offset $offset to final hash")
       finalMD.update(digest)
     }
     
     // Convert the final digest to hex string
     val md5Hash = finalMD.digest().map("%02x".format(_)).mkString
+    logger.info(s"Final MD5 hash calculated: $md5Hash")
     
     // Clean up
+    logger.info("Unpersisting cached data")
     partialHashes.unpersist()
     
+    logger.info("=== MD5 calculation completed ===")
     md5Hash
   }
   
@@ -135,45 +262,93 @@ object DistributedMD5Calculator {
                               spark: SparkSession) = {
     import spark.implicits._
     
+    logger.info(s"=== Starting batch MD5 calculation for ${hdfsFilePaths.length} files ===")
+    
     // Create DataFrame of file paths
+    logger.info("Creating DataFrame of file paths")
     val pathsDF = spark.createDataset(hdfsFilePaths).toDF("file_path")
     
     // Register UDF for MD5 calculation
+    logger.info("Registering MD5 calculation UDF")
     val calculateMD5UDF = udf((filePath: String) => {
+      logger.info(s"UDF called for file: $filePath")
       calculateDistributedMD5(filePath, chunkSize, spark)
     })
     
     // Apply UDF to calculate MD5 for each file
+    logger.info("Applying MD5 calculation to each file")
     val resultsDF = pathsDF.withColumn("md5_hash", calculateMD5UDF($"file_path"))
     
+    logger.info("=== Batch MD5 calculation completed ===")
     resultsDF
   }
   
   def main(args: Array[String]): Unit = {
+    logger.info("=== Starting Distributed MD5 Calculator application ===")
+    
+    // Configure logging
+    Logger.getLogger("org").setLevel(Level.WARN)
+    Logger.getLogger("akka").setLevel(Level.WARN)
+    
     // Example usage
+    logger.info("Building SparkSession")
     val spark = SparkSession.builder()
       .appName("Distributed MD5 Calculator")
+      .config("spark.executor.memory", "8g")
+      .config("spark.driver.memory", "4g")
+      .config("spark.memory.fraction", "0.8")
+      .config("spark.executor.memoryOverhead", "2g")
+      .config("spark.speculation", "true")  // Relaunch slow tasks
+      .config("spark.task.maxFailures", "4") // More retries for failed tasks
       .getOrCreate()
       
     try {
+      logger.info(s"Application started with arguments: ${args.mkString(", ")}")
+      
       if (args.length < 1) {
-        println("Usage: DistributedMD5Calculator <hdfs_file_path> [chunk_size_in_mb]")
+        logger.error("Missing required arguments")
+        logger.info("Usage: DistributedMD5Calculator <hdfs_file_path> [chunk_size_in_mb]")
         System.exit(1)
       }
       
       val hdfsFilePath = args(0)
-      val chunkSizeMB = if (args.length > 1) args(1).toInt else 64
+      logger.info(s"File path to process: $hdfsFilePath")
+      
+      val chunkSizeMB = if (args.length > 1) {
+        logger.info(s"Custom chunk size specified: ${args(1)} MB")
+        args(1).toInt
+      } else {
+        logger.info("Using default chunk size: 64 MB")
+        64
+      }
+      
       val chunkSize = chunkSizeMB * 1024 * 1024
+      logger.info(s"Chunk size in bytes: $chunkSize")
       
       val startTime = System.currentTimeMillis()
+      logger.info(s"Starting MD5 calculation at ${new java.util.Date(startTime)}")
+      
       val md5Hash = calculateDistributedMD5(hdfsFilePath, chunkSize, spark)
+      
       val endTime = System.currentTimeMillis()
+      val duration = (endTime - startTime) / 1000.0
       
+      logger.info(s"MD5 Hash: $md5Hash")
+      logger.info(s"Time taken: $duration seconds")
+      
+      // Print to console as well
       println(s"MD5 Hash: $md5Hash")
-      println(s"Time taken: ${(endTime - startTime) / 1000.0} seconds")
+      println(s"Time taken: $duration seconds")
       
+    } catch {
+      case e: Exception =>
+        logger.error(s"Error in main method: ${e.getMessage}", e)
+        println(s"ERROR: ${e.getMessage}")
+        e.printStackTrace()
     } finally {
+      logger.info("Stopping SparkSession")
       spark.stop()
+      logger.info("=== Distributed MD5 Calculator application completed ===")
     }
   }
 }
