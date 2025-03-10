@@ -1,3 +1,20 @@
+spark3-submit --class com.citi.fileingestionframework.driver.MD5DeepBenchmark \
+   --master yarn \
+   --deploy-mode cluster \
+   --queue root.kyccr_651_yarn \
+   --conf spark.driver.memory=12g \
+   --conf spark.executor.memory=4g \
+   --conf spark.executor.memoryOverhead=2g \
+   --conf spark.memory.fraction=0.8 \
+   --conf spark.speculation=true \
+   --conf spark.task.maxFailures=4 \
+   --conf spark.dynamicAllocation.enabled=true \
+   --conf spark.dynamicAllocation.minExecutors=10 \
+   --conf spark.dynamicAllocation.maxExecutors=15 \
+   /data/l/gcganamfrmd/data/is44065/fileingestionmd5/file_ingestion_framework-4.0-jar-with-dependencies.jar \
+   /data/gcganamfrmd/work/sr24819/target_file_100GB.dat
+
+
 spark3-submit \
   --class com.citi.fileingestionframework.driver.DistributedMD5Calculator \
   --master yarn \
