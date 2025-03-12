@@ -1,12 +1,23 @@
-val startTime = System.nanoTime()
-val md5Checksum = org.apache.commons.codec.digest.DigestUtils.md5Hex(fs.open(new Path(hdfsPath)))
-val endTime = System.nanoTime()
-val durationSeconds = (endTime - startTime) / 1e9
-
-logger.info(s"MD5 checksum: $md5Checksum")
-logger.info(f"Time taken: $durationSeconds%.3f seconds")
-println(f"MD5 calculation completed in $durationSeconds%.3f seconds")
-
-// You can also calculate throughput
-val throughputMBps = (fileSize / 1024.0 / 1024.0) / durationSeconds
-logger.info(f"Throughput: $throughputMBps%.2f MB/second")
+// Add this to your benchmarking method
+try {
+  logger.info("Testing Google Guava Hashing for HDFS")
+  println("Testing Google Guava Hashing for HDFS")
+  
+  val startTimeGuava = System.nanoTime()
+  val md5HashGuava = calculateMD5WithGuavaHDFS(hdfsFilePath, fs)
+  val endTimeGuava = System.nanoTime()
+  val durationGuava = (endTimeGuava - startTimeGuava) / 1e9
+  
+  // Calculate throughput
+  val throughputGuava = (fileSize / 1024.0 / 1024.0) / durationGuava
+  
+  logger.info(s"Guava MD5 Hash: $md5HashGuava")
+  logger.info(f"Guava Time: $durationGuava%.3f seconds")
+  logger.info(f"Guava Throughput: $throughputGuava%.2f MB/second")
+  
+  // Add to results map
+  results("Guava") = (md5HashGuava, durationGuava)
+} catch {
+  case e: Exception =>
+    logger.error(s"Error with Guava method: ${e.getMessage}", e)
+}
