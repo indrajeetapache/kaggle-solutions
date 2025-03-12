@@ -1,250 +1,55 @@
-package com.citi.fileingestionframework.driver
-
-// Standard imports
-import java.io.{BufferedInputStream, File}
-import java.security.MessageDigest
-import java.nio.file.Paths
-
-// Apache imports
-import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql.SparkSession
-import org.apache.log4j.{Level, Logger}
-
-// Google Guava imports
-import com.google.common.hash.Hashing
-import com.google.common.io.{Files, ByteSource}
-
-// Scala imports
-import scala.collection.mutable.ArrayBuffer
-
-/**
- * MD5 benchmark utility that tests and compares different MD5 calculation methods
- * for HDFS files.
- */
-object MD5DeepBenchmark {
-  // Initialize logger
-  val logger = Logger.getLogger(this.getClass)
+def computeMD5(hdfsPath: String, bufferSizeMB: Int, spark: SparkSession): (String, Double) = {
+  val bufferSize = bufferSizeMB * 1024 * 1024
   
-  /**
-   * Main method to run benchmarks
-   */
-  def main(args: Array[String]): Unit = {
-    // Configure logging
-    Logger.getLogger("org").setLevel(Level.WARN)
-    Logger.getLogger("akka").setLevel(Level.WARN)
-    
-    println("MD5 Benchmark starting")
-    
-    val spark = SparkSession.builder()
-      .appName("MD5 Buffer Size Benchmark")
-      .getOrCreate()
+  logger.info(s"Starting MD5 calculation with ${bufferSizeMB}MB buffer size for file: $hdfsPath")
+  
+  val startTime = System.nanoTime()
+  
+  val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+  val rawInputStream = fs.open(new Path(hdfsPath))
+  val inputStream = new BufferedInputStream(rawInputStream, bufferSize)
+  
+  val fileSize = fs.getFileStatus(new Path(hdfsPath)).getLen
+  val totalMB = fileSize / (1024 * 1024) // Add this line to define totalMB
+  val md = MessageDigest.getInstance("MD5")
+  val buffer = new Array[Byte](bufferSize)
+  
+  var bytesRead = 0
+  var totalBytesRead = 0L
+  var lastReportTime = System.nanoTime()
+  val reportIntervalMs = 10000 // Report every 10 seconds
+  
+  try {
+    while ({bytesRead = inputStream.read(buffer); bytesRead != -1}) {
+      md.update(buffer, 0, bytesRead)
+      totalBytesRead += bytesRead
       
+      // Progress reporting
+      val currentTime = System.nanoTime()
+      if ((currentTime - lastReportTime) / 1000000 > reportIntervalMs) {
+        val percent = (totalBytesRead.toDouble / fileSize) * 100
+        val elapsedSec = (currentTime - startTime) / 1e9
+        val mbProcessed = totalBytesRead / (1024 * 1024)
+        val mbPerSec = mbProcessed / elapsedSec
+        
+        logger.info(f"Progress: $percent%.2f%% ($mbProcessed/$totalMB MB), Speed: $mbPerSec%.2f MB/s")
+        
+        lastReportTime = currentTime
+      }
+    }
+  } finally {
     try {
-      if (args.length < 1) {
-        println("Usage: MD5DeepBenchmark <hdfs_file_path> [buffer_size_1,buffer_size_2,...]")
-        System.exit(1)
-      }
-      
-      val hdfsPath = args(0)
-      
-      // Parse buffer sizes to test
-      val defaultSizes = Array(4, 8, 512)
-      val bufferSizes = if (args.length > 1) {
-        args(1).split(",").map(_.trim.toInt)
-      } else {
-        defaultSizes
-      }
-      
-      logger.info(s"Testing buffer sizes (MB): ${bufferSizes.mkString(", ")}")
-      
-      // Run benchmark
-      val results = benchmarkMD5(hdfsPath, spark, bufferSizes)
-      
-      // Find optimal buffer size (fastest)
-      val optimalSize = results.minBy(_._2._2)._1
-      println(s"Recommended optimal buffer size: ${optimalSize}MB")
-      logger.info(s"Recommended optimal buffer size: ${optimalSize}MB")
-      
+      inputStream.close()
     } catch {
-      case e: Exception =>
-        logger.error(s"Error in benchmark: ${e.getMessage}", e)
-        println(s"Error in benchmark: ${e.getMessage}")
-        e.printStackTrace()
-    } finally {
-      spark.stop()
+      case e: Exception => logger.warn(s"Error closing input stream: ${e.getMessage}")
     }
   }
   
-  /**
-   * Benchmark MD5 calculation with different buffer sizes
-   */
-  def benchmarkMD5(hdfsPath: String, spark: SparkSession, bufferSizesToTest: Array[Int]): Map[Any, (String, Double)] = {
-    logger.info(s"Starting MD5 benchmark for file: $hdfsPath")
-    
-    val results = scala.collection.mutable.Map[Any, (String, Double)]()
-    val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
-    val fileSize = fs.getFileStatus(new Path(hdfsPath)).getLen
-    
-    logger.info(s"File size: $fileSize bytes (${fileSize / (1024 * 1024 * 1024.0)} GB)")
-    
-    // Test Google Guava implementation
-    try {
-      logger.info("Testing Google Guava Hashing for HDFS")
-      
-      val startTimeGuava = System.nanoTime()
-      val md5HashGuava = calculateMD5WithGuavaHDFS(hdfsPath, fs)
-      val endTimeGuava = System.nanoTime()
-      val durationGuava = (endTimeGuava - startTimeGuava) / 1e9
-      
-      val throughputGuava = (fileSize / 1024.0 / 1024.0) / durationGuava
-      
-      logger.info(s"Guava MD5 Hash: $md5HashGuava")
-      logger.info(f"Guava Time: $durationGuava%.3f seconds")
-      logger.info(f"Guava Throughput: $throughputGuava%.2f MB/second")
-      
-      results("Guava") = (md5HashGuava, durationGuava)
-    } catch {
-      case e: Exception =>
-        logger.error(s"Error with Guava method: ${e.getMessage}", e)
-    }
-    
-    // Test DigestUtils implementation (for smaller files)
-    if (fileSize < 2L * 1024 * 1024 * 1024) { // Only for files < 2GB
-      try {
-        logger.info("Testing Apache Commons DigestUtils.md5Hex method")
-        
-        val startTime = System.nanoTime()
-        val md5Checksum = org.apache.commons.codec.digest.DigestUtils.md5Hex(fs.open(new Path(hdfsPath)))
-        val endTimeDigestUtils = System.nanoTime()
-        val durationDigestUtils = (endTimeDigestUtils - startTime) / 1e9
-        
-        val throughputMBps = (fileSize / 1024.0 / 1024.0) / durationDigestUtils
-        
-        logger.info(s"DigestUtils MD5 checksum: $md5Checksum")
-        logger.info(f"DigestUtils time taken: $durationDigestUtils%.3f seconds")
-        logger.info(f"DigestUtils throughput: $throughputMBps%.2f MB/second")
-        
-        results("DigestUtils") = (md5Checksum, durationDigestUtils)
-      } catch {
-        case e: Exception =>
-          logger.error(s"Error with DigestUtils method: ${e.getMessage}", e)
-      }
-    } else {
-      logger.info("Skipping DigestUtils method for large file (>2GB)")
-    }
-    
-    // Test custom chunked implementation with different buffer sizes
-    for (bufferSizeMB <- bufferSizesToTest) {
-      try {
-        logger.info(s"---------- Testing ${bufferSizeMB}MB buffer size ----------")
-        
-        // Run with best of 1 try for simplicity
-        val (hash, time) = computeMD5(hdfsPath, bufferSizeMB, spark)
-        
-        results(bufferSizeMB) = (hash, time)
-        logger.info(f"Buffer size: ${bufferSizeMB}MB, Time: $time%.3f seconds")
-      } catch {
-        case e: Exception =>
-          logger.error(s"Error testing ${bufferSizeMB}MB buffer: ${e.getMessage}", e)
-      }
-    }
-    
-    // Print summary
-    logger.info("===== MD5 Benchmark Results =====")
-    
-    // Sort by speed (fastest first)
-    val sortedResults = results.toSeq.sortBy(_._2._2)
-    
-    for ((method, (hash, time)) <- sortedResults) {
-      val throughput = (fileSize / 1024.0 / 1024.0) / time
-      logger.info(f"Method: $method, Time: $time%.3f seconds, Throughput: $throughput%.2f MB/s")
-      println(f"Method: $method, Time: $time%.3f seconds, Throughput: $throughput%.2f MB/s")
-    }
-    
-    // Check if all hashes match
-    val hashes = results.values.map(_._1).toSet
-    if (hashes.size == 1) {
-      logger.info("All MD5 hashes match across methods ✓")
-      println("All MD5 hashes match across methods ✓")
-    } else {
-      logger.error("WARNING: Not all MD5 hashes match! Verification failed!")
-      println("WARNING: Not all MD5 hashes match! Verification failed!")
-    }
-    
-    results.toMap
-  }
+  val md5Hash = md.digest().map("%02x".format(_)).mkString
+  val endTime = System.nanoTime()
+  val duration = (endTime - startTime) / 1e9 // Convert to seconds
   
-  /**
-   * Compute MD5 hash using chunked streaming approach
-   */
-  def computeMD5(hdfsPath: String, bufferSizeMB: Int, spark: SparkSession): (String, Double) = {
-    val bufferSize = bufferSizeMB * 1024 * 1024
-    
-    logger.info(s"Starting MD5 calculation with ${bufferSizeMB}MB buffer size for file: $hdfsPath")
-    
-    val startTime = System.nanoTime()
-    
-    val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
-    val rawInputStream = fs.open(new Path(hdfsPath))
-    val inputStream = new BufferedInputStream(rawInputStream, bufferSize)
-    
-    val fileSize = fs.getFileStatus(new Path(hdfsPath)).getLen
-    val md = MessageDigest.getInstance("MD5")
-    val buffer = new Array[Byte](bufferSize)
-    
-    var bytesRead = 0
-    var totalBytesRead = 0L
-    var lastReportTime = System.nanoTime()
-    val reportIntervalMs = 10000 // Report every 10 seconds
-    
-    try {
-      while ({bytesRead = inputStream.read(buffer); bytesRead != -1}) {
-        md.update(buffer, 0, bytesRead)
-        totalBytesRead += bytesRead
-        
-        // Progress reporting
-        val currentTime = System.nanoTime()
-        if ((currentTime - lastReportTime) / 1000000 > reportIntervalMs) {
-          val percent = (totalBytesRead.toDouble / fileSize) * 100
-          val elapsedSec = (currentTime - startTime) / 1e9
-          val mbProcessed = totalBytesRead / (1024 * 1024)
-          val mbPerSec = mbProcessed / elapsedSec
-          
-          logger.info(f"Progress: $percent%.2f%% ($mbProcessed/$totalMB MB), Speed: $mbPerSec%.2f MB/s")
-          
-          lastReportTime = currentTime
-        }
-      }
-    } finally {
-      try {
-        inputStream.close()
-      } catch {
-        case e: Exception => logger.warn(s"Error closing input stream: ${e.getMessage}")
-      }
-    }
-    
-    val md5Hash = md.digest().map("%02x".format(_)).mkString
-    val endTime = System.nanoTime()
-    val duration = (endTime - startTime) / 1e9 // Convert to seconds
-    
-    logger.info(f"MD5 hash: $md5Hash (buffer size: ${bufferSizeMB}MB, time: $duration%.3f seconds)")
-    
-    (md5Hash, duration)
-  }
+  logger.info(f"MD5 hash: $md5Hash (buffer size: ${bufferSizeMB}MB, time: $duration%.3f seconds)")
   
-  /**
-   * Calculate MD5 using Google Guava (for HDFS files)
-   */
-  def calculateMD5WithGuavaHDFS(hdfsFilePath: String, fs: FileSystem): String = {
-    val path = new Path(hdfsFilePath)
-    
-    // Create a ByteSource from HDFS InputStream
-    val byteSource = new ByteSource() {
-      override def openStream(): java.io.InputStream = {
-        fs.open(path)
-      }
-    }
-    
-    byteSource.hash(Hashing.md5()).toString
-  }
+  (md5Hash, duration)
 }
