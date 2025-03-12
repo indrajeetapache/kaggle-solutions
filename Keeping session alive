@@ -1,3 +1,27 @@
+// In your benchmarkMD5Methods function, add this section for DigestUtils
+logger.info("Testing Apache Commons DigestUtils.md5Hex method")
+println("Testing Apache Commons DigestUtils.md5Hex method")
+
+val startTimeDigestUtils = System.nanoTime()
+try {
+  val md5Checksum = org.apache.commons.codec.digest.DigestUtils.md5Hex(fs.open(new Path(hdfsFilePath)))
+  val endTimeDigestUtils = System.nanoTime()
+  val durationSecondsDigestUtils = (endTimeDigestUtils - startTimeDigestUtils) / 1e9
+  
+  // Calculate throughput
+  val throughputMBps = (fileSize / 1024.0 / 1024.0) / durationSecondsDigestUtils
+  
+  logger.info(s"DigestUtils MD5 checksum: $md5Checksum")
+  logger.info(f"DigestUtils time taken: $durationSecondsDigestUtils%.3f seconds")
+  logger.info(f"DigestUtils throughput: $throughputMBps%.2f MB/second")
+  
+  // Add to results map
+  results("DigestUtils") = (md5Checksum, durationSecondsDigestUtils)
+} catch {
+  case e: Exception =>
+    logger.error(s"Error with DigestUtils method: ${e.getMessage}")
+    logger.error("This is expected for large files as DigestUtils loads the entire file into memory")
+}
 
 // For an HDFS file
 def calculateMD5WithGuavaHDFS(hdfsFilePath: String, fs: org.apache.hadoop.fs.FileSystem): String = {
