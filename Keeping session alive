@@ -1,1 +1,12 @@
+val startTime = System.nanoTime()
+val md5Checksum = org.apache.commons.codec.digest.DigestUtils.md5Hex(fs.open(new Path(hdfsPath)))
+val endTime = System.nanoTime()
+val durationSeconds = (endTime - startTime) / 1e9
 
+logger.info(s"MD5 checksum: $md5Checksum")
+logger.info(f"Time taken: $durationSeconds%.3f seconds")
+println(f"MD5 calculation completed in $durationSeconds%.3f seconds")
+
+// You can also calculate throughput
+val throughputMBps = (fileSize / 1024.0 / 1024.0) / durationSeconds
+logger.info(f"Throughput: $throughputMBps%.2f MB/second")
