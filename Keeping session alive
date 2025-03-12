@@ -23,6 +23,12 @@ try {
     logger.error("This is expected for large files as DigestUtils loads the entire file into memory")
 }
 
+import com.google.common.hash.Hashing
+import com.google.common.io.Files
+import java.io.File
+import com.google.common.io.ByteSource
+import org.apache.hadoop.fs.Path
+import java.nio.file.Paths 
 // For an HDFS file
 def calculateMD5WithGuavaHDFS(hdfsFilePath: String, fs: org.apache.hadoop.fs.FileSystem): String = {
   val path = new Path(hdfsFilePath)
