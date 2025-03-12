@@ -1,3 +1,17 @@
+
+// For an HDFS file
+def calculateMD5WithGuavaHDFS(hdfsFilePath: String, fs: org.apache.hadoop.fs.FileSystem): String = {
+  val path = new Path(hdfsFilePath)
+  
+  // Create a ByteSource from HDFS InputStream
+  val byteSource = new ByteSource() {
+    override def openStream(): java.io.InputStream = {
+      fs.open(path)
+    }
+  }
+  
+  byteSource.hash(Hashing.md5()).toString
+}
 // Add this to your benchmarking method
 try {
   logger.info("Testing Google Guava Hashing for HDFS")
