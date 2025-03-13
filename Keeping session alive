@@ -252,25 +252,29 @@ object MD5DeepBenchmark {
     }
     */
     
-    // Test multi-threaded parallel I/O approach with 8 threads
-    try {
-      logger.info("Testing multi-threaded parallel I/O approach with 8 threads")
-      
-      val startTime = System.nanoTime()
-      val md5Hash = computeMD5WithParallelIO(hdfsPath, spark, 8)
-      val endTime = System.nanoTime()
-      val duration = (endTime - startTime) / 1e9
-      
-      val throughput = (fileSize / 1024.0 / 1024.0) / duration
-      
-      logger.info(s"Parallel I/O MD5 Hash: $md5Hash")
-      logger.info(f"Parallel I/O Time: $duration%.3f seconds")
-      logger.info(f"Parallel I/O Throughput: $throughput%.2f MB/second")
-      
-      results("ParallelIO") = (md5Hash, duration)
-    } catch {
-      case e: Exception =>
-        logger.error(s"Error with Parallel I/O method: ${e.getMessage}", e)
+    // Test multi-threaded parallel I/O approach with different thread counts
+    val threadCounts = Array(4, 8, 16)
+    for (threadCount <- threadCounts) {
+      try {
+        logger.info(s"Testing multi-threaded parallel I/O approach with $threadCount threads")
+        println(s"Testing multi-threaded parallel I/O approach with $threadCount threads")
+        
+        val startTime = System.nanoTime()
+        val md5Hash = computeMD5WithParallelIO(hdfsPath, spark, threadCount)
+        val endTime = System.nanoTime()
+        val duration = (endTime - startTime) / 1e9
+        
+        val throughput = (fileSize / 1024.0 / 1024.0) / duration
+        
+        logger.info(s"Parallel I/O ($threadCount threads) MD5 Hash: $md5Hash")
+        logger.info(f"Parallel I/O ($threadCount threads) Time: $duration%.3f seconds")
+        logger.info(f"Parallel I/O ($threadCount threads) Throughput: $throughput%.2f MB/second")
+        
+        results(s"ParallelIO-$threadCount") = (md5Hash, duration)
+      } catch {
+        case e: Exception =>
+          logger.error(s"Error with Parallel I/O method ($threadCount threads): ${e.getMessage}", e)
+      }
     }
     
     // Test custom chunked implementation with different buffer sizes
@@ -291,6 +295,7 @@ object MD5DeepBenchmark {
     
     // Print summary
     logger.info("===== MD5 Benchmark Results =====")
+    println("===== MD5 Benchmark Results =====")
     
     // Sort by speed (fastest first)
     val sortedResults = results.toSeq.sortBy(_._2._2)
@@ -309,6 +314,14 @@ object MD5DeepBenchmark {
     } else {
       logger.error("WARNING: Not all MD5 hashes match! Verification failed!")
       println("WARNING: Not all MD5 hashes match! Verification failed!")
+    }
+    
+    // Find optimal parallel I/O thread count
+    val parallelIOResults = results.filter(_._1.toString.startsWith("ParallelIO-"))
+    if (parallelIOResults.nonEmpty) {
+      val optimalThread = parallelIOResults.minBy(_._2._2)._1.toString.split('-')(1)
+      logger.info(s"Optimal thread count for parallel I/O: $optimalThread")
+      println(s"Optimal thread count for parallel I/O: $optimalThread")
     }
     
     results.toMap
