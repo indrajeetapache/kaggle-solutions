@@ -1,1 +1,4 @@
---
+
+spark._jsparkSession.sessionState().catalog().getTableMetadata(
+    spark.sparkContext._jvm.org.apache.spark.sql.catalyst.TableIdentifier('table', 
+    spark.sparkContext._jvm.scala.Some('database'))).storage().locationUri().get()
