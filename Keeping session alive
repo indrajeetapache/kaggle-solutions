@@ -13,3 +13,6 @@ spark3-submit \
   --conf "spark.yarn.appMasterEnv.logUID=460e4ee9-9773-4f6b-a77a-0789f82b607c" \
   --files log4j2.properties \
   your_script.py  # Replace with your actual script
+
+conf.set("dfs.checksum.combine.mode", "COMPOSITE_CRC")
+  conf.set("fs.gs.checksum.type", "CRC32C")
