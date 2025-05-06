@@ -16,3 +16,5 @@ spark3-submit \
 
 conf.set("dfs.checksum.combine.mode", "COMPOSITE_CRC")
   conf.set("fs.gs.checksum.type", "CRC32C")
+--conf spark.yarn.principal=user@REALM.COM \
+  --conf spark.yarn.keytab=/path/to/user.keytab \
