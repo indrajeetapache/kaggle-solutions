@@ -1,4 +1,15 @@
-
-spark._jsparkSession.sessionState().catalog().getTableMetadata(
-    spark.sparkContext._jvm.org.apache.spark.sql.catalyst.TableIdentifier('table', 
-    spark.sparkContext._jvm.scala.Some('database'))).storage().locationUri().get()
+spark3-submit \
+  --master yarn \
+  --deploy-mode cluster \
+  --name TRIALS_DETAIL_DLY \
+  --conf spark.yarn.maxAppAttempts=1 \
+  --conf "spark.executor.extraJavaOptions=-Duser.timezone=UTC" \
+  --conf "spark.driver.extraJavaOptions=-Duser.timezone=UTC" \
+  --conf "spark.sql.session.timeZone=UTC" \
+  --conf "spark.yarn.appMasterEnv.TZ=UTC" \
+  --conf "spark.executorEnv.TZ=UTC" \
+  --conf "spark.driver.extraJavaOptions=-Dlog4j.configurationFile=log4j2.properties" \
+  --conf "spark.executor.extraJavaOptions=-Dlog4j.configurationFile=log4j2.properties" \
+  --conf "spark.yarn.appMasterEnv.logUID=460e4ee9-9773-4f6b-a77a-0789f82b607c" \
+  --files log4j2.properties \
+  your_script.py  # Replace with your actual script
