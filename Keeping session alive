@@ -18,3 +18,17 @@ conf.set("dfs.checksum.combine.mode", "COMPOSITE_CRC")
   conf.set("fs.gs.checksum.type", "CRC32C")
 --conf spark.yarn.principal=user@REALM.COM \
   --conf spark.yarn.keytab=/path/to/user.keytab \
+
+
+from pyspark.sql import SparkSession
+import getpass
+
+spark = SparkSession.builder.appName("KerberosTest").getOrCreate()
+
+print("✅ Spark session started")
+print(f"✅ User running the job: {getpass.getuser()}")
+
+df = spark.range(5)
+df.show()
+
+spark.stop()
