@@ -32,3 +32,11 @@ df = spark.range(5)
 df.show()
 
 spark.stop()
+
+
+========
+
+  --conf spark.yarn.appMasterEnv.KRB5CCNAME=krb5cc \
+  --conf spark.executorEnv.KRB5CCNAME=krb5cc \
+  --conf spark.hadoop.security.authentication=kerberos \
+  --conf spark.hadoop.fs.defaultFS=hdfs://your-cluster-name \
