@@ -1,21 +1,13 @@
 query_result = df.filter(
-    (col("o_statementdate").isNull() | (trim(col("o_statementdate").cast("string")) == "")) &
-    (date_format(to_timestamp(col("o_pxcreateddatetime"), 'yyyy-MM-dd-HH.mm.ss.SSSSSS'), 'yyyyMMdd') >= '20250301')
-)
-
-
-from pyspark.sql.functions import coalesce, lit
-
-query_result3 = df.filter(
-    (coalesce(trim(col("o_statementdate")), lit("")) == "") &
-    (date_format(to_timestamp(col("o_pxcreateddatetime"), 'yyyy-MM-dd-HH.mm.ss.SSSSSS'), 'yyyyMMdd') >= '20250301')
-)
-
-
-simplers
-
-
-query_result3 = df.filter(
     ((col("o_statementdate") == "") | col("o_statementdate").isNull()) &
+    (date_format(to_timestamp(col("o_pxcreateddatetime"), 'yyyy-MM-dd-HH.mm.ss.SSSSSS'), 'yyyyMMdd') >= '20250301')
+)
+
+
+=======
+
+
+query_result = df.filter(
+    (coalesce(trim(col("o_statementdate")), lit("")) == "") &
     (date_format(to_timestamp(col("o_pxcreateddatetime"), 'yyyy-MM-dd-HH.mm.ss.SSSSSS'), 'yyyyMMdd') >= '20250301')
 )
