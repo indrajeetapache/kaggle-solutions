@@ -1,1 +1,28 @@
-python -m ipykernel install --user --name py311 --display-name "Python 3 (py311)"
+# 1. Parse the metric_values array
+from pyspark.sql.functions import explode, col, regexp_extract
+
+# Extract values from array format like [20250409, null, 53592, 0.10124401]
+flattened_df = df.select(
+    col("metric_name"),
+    col("col_name"), 
+    explode(col("metric_values")).alias("metric_array")
+).select(
+    col("metric_name"),
+    col("col_name"),
+    col("metric_array.Key").alias("date_or_key"),
+    col("metric_array.Value").alias("metric_value"),
+    col("metric_array.Count").alias("count_value"),
+    col("metric_array.Ratio").alias("ratio_value")
+)
+
+# 2. Pivot to time series format
+pivot_df = flattened_df.filter(col("date_or_key").isNotNull()) \
+    .groupBy("col_name", "date_or_key") \
+    .pivot("metric_name") \
+    .agg(first("metric_value"))
+
+# 3. Create rolling features for anomaly detection
+window_7d = Window.partitionBy("col_name").orderBy("date_or_key").rowsBetween(-6, 0)
+
+final_df = pivot_df.withColumn("histogram_7d_avg", avg("Histogram").over(window_7d)) \
+    .withColumn("distinctness_trend", avg("Distinctness").over(window_7d))
