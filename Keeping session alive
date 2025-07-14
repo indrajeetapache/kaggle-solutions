@@ -1,29 +1,19 @@
 from pyspark.sql.functions import *
 
-# Extract quantile values using regex
-df_parsed = df.withColumn("quantile_matches", 
-    regexp_extract_all(col("metric_values"), r"ApproxQuantiles-([\d.]+),\s*([\dE.-]+)")) \
-.withColumn("quantile_data", 
-    transform(col("quantile_matches"), 
-        lambda x: struct(
-            regexp_extract(x, r"ApproxQuantiles-([\d.]+)", 1).cast("double").alias("quantile"),
-            regexp_extract(x, r",([\dE.-]+)", 1).cast("double").alias("value")
-        ))) \
-.select("dataset_name", "col_name", "metric_name", 
-        explode("quantile_data").alias("parsed")) \
-.select("*", 
-        col("parsed.quantile"), 
-        col("parsed.value"))
+# For ApproxQuantiles specifically - extract key-value pairs
+df_quantiles = df.filter(col("metric_name") == "ApproxQuantiles") \
+    .withColumn("quantile", regexp_extract(col("metric_values"), r"ApproxQuantiles-([\d.]+)", 1).cast("double")) \
+    .withColumn("value", regexp_extract(col("metric_values"), r"ApproxQuantiles-[\d.]+,\s*([\dE.-]+)", 1).cast("double")) \
+    .filter(col("quantile").isNotNull() & col("value").isNotNull())
 
-# For different metrics, use CASE WHEN
-df_all_metrics = df.withColumn("parsed_value",
-    when(col("metric_name") == "ApproxQuantiles", 
-         regexp_extract(col("metric_values"), r",([\dE.-]+)", 1))
-    .when(col("metric_name") == "Mean",
-         regexp_extract(col("metric_values"), r"([\d.]+)", 1))
-    .otherwise(lit(null)))
+# For other metrics - extract single values
+df_other = df.filter(col("metric_name") != "ApproxQuantiles") \
+    .withColumn("value", regexp_extract(col("metric_values"), r"([\d.E-]+)", 1).cast("double"))
 
-# Pivot to time series
-final_df = df_all_metrics.groupBy("col_name", "dataset_name") \
+# Union and pivot
+df_combined = df_quantiles.select("dataset_name", "col_name", "metric_name", "value") \
+    .union(df_other.select("dataset_name", "col_name", "metric_name", "value"))
+
+final_df = df_combined.groupBy("col_name", "dataset_name") \
     .pivot("metric_name") \
-    .agg(first("parsed_value"))
+    .agg(first("value"))
