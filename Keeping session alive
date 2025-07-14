@@ -1,28 +1,29 @@
-# 1. Parse the metric_values array
-from pyspark.sql.functions import explode, col, regexp_extract
+from pyspark.sql.functions import *
 
-# Extract values from array format like [20250409, null, 53592, 0.10124401]
-flattened_df = df.select(
-    col("metric_name"),
-    col("col_name"), 
-    explode(col("metric_values")).alias("metric_array")
-).select(
-    col("metric_name"),
-    col("col_name"),
-    col("metric_array.Key").alias("date_or_key"),
-    col("metric_array.Value").alias("metric_value"),
-    col("metric_array.Count").alias("count_value"),
-    col("metric_array.Ratio").alias("ratio_value")
-)
+# Extract quantile values using regex
+df_parsed = df.withColumn("quantile_matches", 
+    regexp_extract_all(col("metric_values"), r"ApproxQuantiles-([\d.]+),\s*([\dE.-]+)")) \
+.withColumn("quantile_data", 
+    transform(col("quantile_matches"), 
+        lambda x: struct(
+            regexp_extract(x, r"ApproxQuantiles-([\d.]+)", 1).cast("double").alias("quantile"),
+            regexp_extract(x, r",([\dE.-]+)", 1).cast("double").alias("value")
+        ))) \
+.select("dataset_name", "col_name", "metric_name", 
+        explode("quantile_data").alias("parsed")) \
+.select("*", 
+        col("parsed.quantile"), 
+        col("parsed.value"))
 
-# 2. Pivot to time series format
-pivot_df = flattened_df.filter(col("date_or_key").isNotNull()) \
-    .groupBy("col_name", "date_or_key") \
+# For different metrics, use CASE WHEN
+df_all_metrics = df.withColumn("parsed_value",
+    when(col("metric_name") == "ApproxQuantiles", 
+         regexp_extract(col("metric_values"), r",([\dE.-]+)", 1))
+    .when(col("metric_name") == "Mean",
+         regexp_extract(col("metric_values"), r"([\d.]+)", 1))
+    .otherwise(lit(null)))
+
+# Pivot to time series
+final_df = df_all_metrics.groupBy("col_name", "dataset_name") \
     .pivot("metric_name") \
-    .agg(first("metric_value"))
-
-# 3. Create rolling features for anomaly detection
-window_7d = Window.partitionBy("col_name").orderBy("date_or_key").rowsBetween(-6, 0)
-
-final_df = pivot_df.withColumn("histogram_7d_avg", avg("Histogram").over(window_7d)) \
-    .withColumn("distinctness_trend", avg("Distinctness").over(window_7d))
+    .agg(first("parsed_value"))
