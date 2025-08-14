@@ -1,44 +1,73 @@
 def _get_target_features(df, target_columns):
-    """Get relevant profiling features for target columns with case-insensitive matching."""
+    """
+    Extract industry-standard profiling features for anomaly detection.
     
-    # Base profiling metrics (universal for int/string)
-    base_suffixes = ['_Mean', '_StandardDeviation', '_ApproxQuantiles', '_CountDistinct']
+    Args:
+        df: DataFrame containing profiling metrics
+        target_columns: List of base column names to monitor
+        
+    Returns:
+        List of selected feature column names
+    """
     
-    # Create case-insensitive column lookup
+    # Core metrics (mandatory for anomaly detection)
+    core_suffixes = [
+        '_Mean',                    # Distribution center
+        '_StandardDeviation',       # Variability measure
+        '_CountDistinct',          # Cardinality tracking
+        '_Completeness'            # Data quality indicator
+    ]
+    
+    # Secondary metrics (data type specific)
+    secondary_suffixes = [
+        '_ApproxQuantiles_0.5',    # Median (robust to outliers)
+        '_UniqueValueRatio',       # Diversity measure
+        '_MaxLength'               # String length tracking
+    ]
+    
+    # Combine all feature suffixes
+    all_suffixes = core_suffixes + secondary_suffixes
+    
+    # Create case-insensitive column lookup for efficient matching
     col_lookup = {col.lower(): col for col in df.columns}
     
     features = []
     
+    print(f"Processing {len(target_columns)} target columns...")
+    
     for base_col in target_columns:
         base_lower = base_col.lower()
         
-        # Find matching columns with met_value suffix
+        # Find all profiling columns for this base column
         matching_cols = [
             actual_col for lower_col, actual_col in col_lookup.items()
             if lower_col.startswith(base_lower) and lower_col.endswith('_met_value')
         ]
         
-        # Extract profiling features for each matching column
-        for col in matching_cols:
-            # Remove _met_value suffix to get base name
-            col_base = col[:-10]  # Remove '_met_value'
+        if not matching_cols:
+            print(f"Warning: No profiling data found for column '{base_col}'")
+            continue
             
-            # Check for base profiling metrics
-            for suffix in base_suffixes:
+        # Extract feature columns for each profiling column
+        for col in matching_cols:
+            col_base = col[:-10]  # Remove '_met_value' suffix
+            
+            # Build feature names and check availability
+            for suffix in all_suffixes:
                 feature_name = f"{col_base}{suffix}_met_value"
+                
                 if feature_name.lower() in col_lookup:
                     features.append(col_lookup[feature_name.lower()])
     
     # Remove duplicates while preserving order
-    seen = set()
-    unique_features = []
-    for f in features:
-        if f not in seen:
-            seen.add(f)
-            unique_features.append(f)
+    unique_features = list(dict.fromkeys(features))
     
-    print(f"Selected {len(unique_features)} profiling features:")
-    for feature in unique_features:
-        print(f"  - {feature}")
+    # Output summary
+    print(f"\nSelected {len(unique_features)} features from {len(target_columns)} target columns")
+    print(f"Average features per column: {len(unique_features) / len(target_columns):.1f}")
+    
+    print("\nSelected features:")
+    for i, feature in enumerate(unique_features, 1):
+        print(f"  {i:2d}. {feature}")
     
     return unique_features
