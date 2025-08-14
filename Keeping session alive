@@ -28,8 +28,9 @@ def _get_target_features(df, target_columns):
     # Combine all feature suffixes
     all_suffixes = core_suffixes + secondary_suffixes
     
-    # Create case-insensitive column lookup for efficient matching
+    # Case-insensitive column lookup
     col_lookup = {col.lower(): col for col in df.columns}
+    available_cols_lower = set(col_lookup.keys())
     
     features = []
     
@@ -38,26 +39,20 @@ def _get_target_features(df, target_columns):
     for base_col in target_columns:
         base_lower = base_col.lower()
         
-        # Find all profiling columns for this base column
-        matching_cols = [
-            actual_col for lower_col, actual_col in col_lookup.items()
-            if lower_col.startswith(base_lower) and lower_col.endswith('_met_value')
-        ]
+        # Direct pattern matching with wildcard for each suffix
+        for suffix in all_suffixes:
+            # Pattern: base_col + anything + suffix + _met_value
+            pattern_matches = [
+                col_lookup[lower_col] for lower_col in available_cols_lower
+                if (lower_col.startswith(base_lower) and 
+                    lower_col.endswith(f"{suffix.lower()}_met_value"))
+            ]
+            
+            features.extend(pattern_matches)
         
-        if not matching_cols:
+        # Check if any features are found for this base column
+        if not any(f for f in features if base_col.lower() in f.lower()):
             print(f"Warning: No profiling data found for column '{base_col}'")
-            continue
-            
-        # Extract feature columns for each profiling column
-        for col in matching_cols:
-            col_base = col[:-10]  # Remove '_met_value' suffix
-            
-            # Build feature names and check availability
-            for suffix in all_suffixes:
-                feature_name = f"{col_base}{suffix}_met_value"
-                
-                if feature_name.lower() in col_lookup:
-                    features.append(col_lookup[feature_name.lower()])
     
     # Remove duplicates while preserving order
     unique_features = list(dict.fromkeys(features))
