@@ -1,19 +1,311 @@
-from pyspark.sql.functions import *
+import yaml
 
-# For ApproxQuantiles specifically - extract key-value pairs
-df_quantiles = df.filter(col("metric_name") == "ApproxQuantiles") \
-    .withColumn("quantile", regexp_extract(col("metric_values"), r"ApproxQuantiles-([\d.]+)", 1).cast("double")) \
-    .withColumn("value", regexp_extract(col("metric_values"), r"ApproxQuantiles-[\d.]+,\s*([\dE.-]+)", 1).cast("double")) \
-    .filter(col("quantile").isNotNull() & col("value").isNotNull())
+def get_config(path, env):
+    """
+    Parse YAML config file and return merged default + environment-specific configuration
+    
+    Args:
+        path: Path to the YAML configuration file
+        env: Environment name (dev, uat, prod, pat)
+    
+    Returns:
+        Dict containing merged configuration
+    """
+    with open(path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Get default config
+    default = config.get('default', {})
+    
+    # Get environment-specific config
+    env_config = config.get(env, {})
+    
+    # Deep merge function - optimized version
+    def deep_merge(base, override):
+        if not isinstance(base, dict) or not isinstance(override, dict):
+            return override
+        
+        result = base.copy()
+        for key, value in override.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
+    
+    # Merge configs
+    merged = deep_merge(default, env_config)
+    
+    return merged
 
-# For other metrics - extract single values
-df_other = df.filter(col("metric_name") != "ApproxQuantiles") \
-    .withColumn("value", regexp_extract(col("metric_values"), r"([\d.E-]+)", 1).cast("double"))
 
-# Union and pivot
-df_combined = df_quantiles.select("dataset_name", "col_name", "metric_name", "value") \
-    .union(df_other.select("dataset_name", "col_name", "metric_name", "value"))
 
-final_df = df_combined.groupBy("col_name", "dataset_name") \
-    .pivot("metric_name") \
-    .agg(first("value"))
+=============
+
+# Single configuration file for all environments with complete spark-submit commands
+default: &default
+  # Model configurations
+  models:
+    lstm:
+      sequence_length: 50
+      hidden_units: 100
+      dropout: 0.2
+      batch_size: 32
+      epochs: 100
+      learning_rate: 0.001
+      optimizer: "adam"
+      validation_split: 0.2
+    pyod_ecod:
+      contamination: 0.1
+      n_jobs: -1
+      random_state: 42
+      standardization: true
+      n_estimators: 100
+      max_features: 1.0
+  
+  # Data configurations
+  data:
+    input_path: "/data/input"
+    output_path: "/data/output"
+    temp_path: "/data/temp"
+    checkpoint_path: "/data/checkpoint"
+    backup_path: "/data/backup"
+    
+  # Database configurations
+  database:
+    driver: "com.mysql.cj.jdbc.Driver"
+    url: "jdbc:mysql://localhost:3306/mldb"
+    properties:
+      user: "mluser"
+      password: "mlpass"
+      useSSL: "false"
+      allowPublicKeyRetrieval: "true"
+    
+  # Logging configurations
+  logging:
+    level: "INFO"
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file: "/logs/ml_pipeline.log"
+    max_file_size: "100MB"
+    backup_count: 5
+
+# Environment-specific configurations
+dev:
+  <<: *default
+  environment_name: "dev"
+  
+  # Development data paths
+  data:
+    dataset_name: "ml_dataset_dev"
+    input_path: "/dev/data/input"
+    output_path: "/dev/data/output"
+    temp_path: "/dev/data/temp"
+    checkpoint_path: "/dev/data/checkpoint"
+    backup_path: "/dev/data/backup"
+  
+  # Development Spark Submit Command - Local Mode
+  spark:
+    spark_submit_dev: |
+      spark-submit \
+        --master local[*] \
+        --deploy-mode client \
+        --conf spark.app.name=ML_Pipeline_DEV \
+        --conf spark.sql.adaptive.enabled=true \
+        --conf spark.sql.shuffle.partitions=10 \
+        --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+        --conf spark.local.dir=/tmp/spark-dev \
+        --conf spark.sql.adaptive.coalescePartitions.initialPartitionNum=10 \
+        --driver-memory 1g \
+        --executor-memory 2g \
+        --executor-cores 1 \
+        --files config.yaml,dev-credentials.conf \
+        --py-files utils.py \
+        --verbose
+  
+  # Development database
+  database:
+    url: "jdbc:mysql://dev-db:3306/mldb_dev"
+    properties:
+      user: "dev_user"
+      password: "dev_pass"
+  
+  # Development logging
+  logging:
+    level: "DEBUG"
+    file: "/dev/logs/ml_pipeline.log"
+    console_level: "DEBUG"
+
+uat:
+  <<: *default
+  environment_name: "uat"
+  
+  # UAT data paths
+  data:
+    dataset_name: "ml_dataset_uat"
+    input_path: "/uat/data/input"
+    output_path: "/uat/data/output"
+    temp_path: "/uat/data/temp"
+    checkpoint_path: "/uat/data/checkpoint"
+    backup_path: "/uat/data/backup"
+  
+  # UAT Spark Submit Command - Small Cluster
+  spark:
+    spark_submit_uat: |
+      spark-submit \
+        --master yarn \
+        --deploy-mode cluster \
+        --conf spark.app.name=ML_Pipeline_UAT \
+        --conf spark.sql.adaptive.enabled=true \
+        --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+        --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+        --conf spark.dynamicAllocation.enabled=true \
+        --conf spark.dynamicAllocation.minExecutors=2 \
+        --conf spark.dynamicAllocation.maxExecutors=10 \
+        --conf spark.dynamicAllocation.initialExecutors=3 \
+        --conf spark.sql.adaptive.skewJoin.enabled=true \
+        --conf spark.sql.adaptive.localShuffleReader.enabled=true \
+        --driver-memory 2g \
+        --executor-memory 3g \
+        --executor-cores 2 \
+        --num-executors 5 \
+        --driver-cores 1 \
+        --queue uat \
+        --files config.yaml,uat-credentials.conf \
+        --py-files utils.py,models/ \
+        --jars hdfs://uat-cluster/jars/mysql-connector-java-8.0.33.jar
+  
+  # UAT database
+  database:
+    url: "jdbc:mysql://uat-db:3306/mldb_uat"
+    properties:
+      user: "uat_user"
+      password: "uat_pass"
+      useSSL: "true"
+  
+  # UAT logging
+  logging:
+    level: "INFO"
+    file: "/uat/logs/ml_pipeline.log"
+    console_level: "INFO"
+
+prod:
+  <<: *default
+  environment_name: "prod"
+  
+  # Production data paths
+  data:
+    dataset_name: "ml_dataset_prod"
+    input_path: "/prod/data/input"
+    output_path: "/prod/data/output"
+    temp_path: "/prod/data/temp"
+    checkpoint_path: "/prod/data/checkpoint"
+    backup_path: "/prod/data/backup"
+  
+  # Production Spark Submit Command - Large Cluster with Full Optimizations
+  spark:
+    spark_submit_prod: |
+      spark-submit \
+        --master yarn \
+        --deploy-mode cluster \
+        --conf spark.app.name=ML_Pipeline_PROD \
+        --conf spark.sql.adaptive.enabled=true \
+        --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+        --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+        --conf spark.sql.execution.arrow.pyspark.enabled=true \
+        --conf spark.dynamicAllocation.enabled=true \
+        --conf spark.dynamicAllocation.minExecutors=5 \
+        --conf spark.dynamicAllocation.maxExecutors=50 \
+        --conf spark.dynamicAllocation.initialExecutors=10 \
+        --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=128MB \
+        --conf spark.sql.adaptive.skewJoin.enabled=true \
+        --conf spark.sql.adaptive.localShuffleReader.enabled=true \
+        --conf spark.network.timeout=600s \
+        --conf spark.executor.heartbeatInterval=60s \
+        --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+        --conf spark.sql.adaptive.maxShuffledHashJoinLocalMapThreshold=268435456 \
+        --driver-memory 4g \
+        --executor-memory 8g \
+        --executor-cores 4 \
+        --num-executors 20 \
+        --driver-cores 2 \
+        --queue production \
+        --files config.yaml,prod-credentials.conf \
+        --py-files utils.py,models/,transforms/ \
+        --jars s3://prod-jars/mysql-connector-java-8.0.33.jar \
+        --packages org.apache.hadoop:hadoop-aws:3.3.4 \
+        --repositories https://repo1.maven.org/maven2/ \
+        --supervise
+  
+  # Production database
+  database:
+    url: "jdbc:mysql://prod-db-cluster:3306/mldb_prod"
+    properties:
+      user: "prod_user"
+      password: "prod_pass"
+      useSSL: "true"
+      allowPublicKeyRetrieval: "false"
+      autoReconnect: "true"
+  
+  # Production logging
+  logging:
+    level: "WARNING"
+    file: "/prod/logs/ml_pipeline.log"
+    console_level: "ERROR"
+
+pat:
+  <<: *default
+  environment_name: "pat"
+  
+  # PAT (Performance Acceptance Testing) data paths
+  data:
+    dataset_name: "ml_dataset_pat"
+    input_path: "/pat/data/input"
+    output_path: "/pat/data/output"
+    temp_path: "/pat/data/temp"
+    checkpoint_path: "/pat/data/checkpoint"
+    backup_path: "/pat/data/backup"
+  
+  # PAT Spark Submit Command - Performance Testing Configuration
+  spark:
+    spark_submit_pat: |
+      spark-submit \
+        --master yarn \
+        --deploy-mode cluster \
+        --conf spark.app.name=ML_Pipeline_PAT \
+        --conf spark.sql.adaptive.enabled=true \
+        --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+        --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+        --conf spark.dynamicAllocation.enabled=true \
+        --conf spark.dynamicAllocation.minExecutors=3 \
+        --conf spark.dynamicAllocation.maxExecutors=25 \
+        --conf spark.dynamicAllocation.initialExecutors=8 \
+        --conf spark.sql.adaptive.skewJoin.enabled=true \
+        --conf spark.sql.adaptive.localShuffleReader.enabled=true \
+        --conf spark.network.timeout=300s \
+        --conf spark.executor.heartbeatInterval=30s \
+        --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=64MB \
+        --driver-memory 3g \
+        --executor-memory 6g \
+        --executor-cores 3 \
+        --num-executors 15 \
+        --driver-cores 2 \
+        --queue pat \
+        --files config.yaml,pat-credentials.conf \
+        --py-files utils.py,models/ \
+        --jars hdfs://pat-cluster/jars/mysql-connector-java-8.0.33.jar \
+        --packages org.apache.spark:spark-avro_2.12:3.4.0
+  
+  # PAT database
+  database:
+    url: "jdbc:mysql://pat-db:3306/mldb_pat"
+    properties:
+      user: "pat_user"
+      password: "pat_pass"
+      useSSL: "true"
+      allowPublicKeyRetrieval: "false"
+  
+  # PAT logging
+  logging:
+    level: "INFO"
+    file: "/pat/logs/ml_pipeline.log"
+    console_level: "INFO"
