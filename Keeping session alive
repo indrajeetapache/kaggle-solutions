@@ -1,3 +1,133 @@
-conda install pytorch==1.7.0 torchvision==0.8.1 torchaudio==0.7.0 cudatoolkit=11.0 -c pytorch
-conda install pytorch==2.17 torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+#!/bin/bash
 
+# extraction.sh - PySpark job execution script
+# Usage: ./extraction.sh <env>
+# Environments: dev, uat, prod
+
+# Set script variables
+SCRIPT_NAME="extraction.sh"
+BUSINESS_DATE="2025-01-15"  # TODO: Update this business date as needed
+PYSPARK_SCRIPT_PATH="/path/to/your/pyspark/script.py"  # TODO: Set actual PySpark script path
+BAD_RECORDS_SCRIPT_PATH="/path/to/bad_Records.py"  # TODO: Set actual bad_Records.py path
+
+# Logging function
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME] $1"
+}
+
+# Validate input arguments
+if [ $# -ne 1 ]; then
+    log_message "ERROR: Invalid number of arguments"
+    log_message "Usage: $0 <environment>"
+    log_message "Valid environments: dev, uat, prod"
+    exit 1
+fi
+
+ENV=$1
+
+# Set spark-submit command and configurations based on environment
+case $ENV in
+    "dev")
+        SPARK_SUBMIT="/opt/spark/dev/bin/spark-submit"  # TODO: Set actual dev spark-submit path
+        EXECUTOR_INSTANCES="2"
+        EXECUTOR_CORES="2"
+        EXECUTOR_MEMORY="2g"
+        DRIVER_MEMORY="1g"
+        log_message "INFO: Using development environment"
+        ;;
+    "uat")
+        SPARK_SUBMIT="/opt/spark/uat/bin/spark-submit"  # TODO: Set actual uat spark-submit path
+        EXECUTOR_INSTANCES="4"
+        EXECUTOR_CORES="4"
+        EXECUTOR_MEMORY="4g"
+        DRIVER_MEMORY="2g"
+        log_message "INFO: Using UAT environment"
+        ;;
+    "prod")
+        SPARK_SUBMIT="/opt/spark/prod/bin/spark-submit"  # TODO: Set actual prod spark-submit path
+        EXECUTOR_INSTANCES="8"
+        EXECUTOR_CORES="4"
+        EXECUTOR_MEMORY="8g"
+        DRIVER_MEMORY="4g"
+        log_message "INFO: Using production environment"
+        ;;
+    *)
+        log_message "ERROR: Invalid environment '$ENV'"
+        log_message "Valid environments: dev, uat, prod"
+        exit 1
+        ;;
+esac
+
+# Validate spark-submit exists
+if [ ! -f "$SPARK_SUBMIT" ]; then
+    log_message "ERROR: spark-submit not found at: $SPARK_SUBMIT"
+    exit 1
+fi
+
+# Validate PySpark script exists
+if [ ! -f "$PYSPARK_SCRIPT_PATH" ]; then
+    log_message "ERROR: PySpark script not found at: $PYSPARK_SCRIPT_PATH"
+    exit 1
+fi
+
+# Display execution details
+log_message "INFO: Starting data extraction process"
+log_message "INFO: Environment: $ENV"
+log_message "INFO: Business Date: $BUSINESS_DATE"
+log_message "INFO: Spark Submit: $SPARK_SUBMIT"
+log_message "INFO: Executor Instances: $EXECUTOR_INSTANCES"
+log_message "INFO: Executor Cores: $EXECUTOR_CORES"
+log_message "INFO: Executor Memory: $EXECUTOR_MEMORY"
+log_message "INFO: Driver Memory: $DRIVER_MEMORY"
+log_message "INFO: PySpark Script: $PYSPARK_SCRIPT_PATH"
+log_message "INFO: Bad Records Script: $BAD_RECORDS_SCRIPT_PATH"
+
+# Execute PySpark job
+log_message "INFO: Executing PySpark job..."
+$SPARK_SUBMIT \
+    --master yarn \
+    --deploy-mode cluster \
+    --num-executors $EXECUTOR_INSTANCES \
+    --executor-cores $EXECUTOR_CORES \
+    --executor-memory $EXECUTOR_MEMORY \
+    --driver-memory $DRIVER_MEMORY \
+    --conf spark.sql.adaptive.enabled=true \
+    --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+    --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB \
+    --conf spark.sql.adaptive.skewJoin.enabled=true \
+    --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+    --conf spark.sql.execution.arrow.pyspark.enabled=true \
+    --conf spark.dynamicAllocation.enabled=false \
+    $PYSPARK_SCRIPT_PATH \
+    --business_date=$BUSINESS_DATE \
+    --env=$ENV
+
+# Check execution status
+SPARK_EXIT_CODE=$?
+if [ $SPARK_EXIT_CODE -eq 0 ]; then
+    log_message "INFO: PySpark job completed successfully"
+else
+    log_message "ERROR: PySpark job failed with exit code: $SPARK_EXIT_CODE"
+    exit $SPARK_EXIT_CODE
+fi
+
+# Process bad records if script exists
+if [ -f "$BAD_RECORDS_SCRIPT_PATH" ]; then
+    log_message "INFO: Processing bad records with business date: $BUSINESS_DATE"
+    python3 $BAD_RECORDS_SCRIPT_PATH --business_date=$BUSINESS_DATE --env=$ENV
+    
+    BAD_RECORDS_EXIT_CODE=$?
+    if [ $BAD_RECORDS_EXIT_CODE -eq 0 ]; then
+        log_message "INFO: Bad records processing completed successfully"
+    else
+        log_message "ERROR: Bad records processing failed with exit code: $BAD_RECORDS_EXIT_CODE"
+        exit $BAD_RECORDS_EXIT_CODE
+    fi
+else
+    log_message "WARNING: Bad records script not found at: $BAD_RECORDS_SCRIPT_PATH"
+fi
+
+log_message "INFO: Data extraction process completed successfully"
+log_message "INFO: Business date processed: $BUSINESS_DATE"
+
+exit 0
