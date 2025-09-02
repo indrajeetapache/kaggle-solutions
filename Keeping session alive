@@ -210,11 +210,13 @@ class EnhancedAnomalyExplainer:
         """
         contributions = {}
         
-        if 'statistical_model' not in self.model_results:
+        # Handle nested model structure
+        model = (self.model_results.get('statistical_model') or 
+                self.model_results.get('model_results', {}).get('statistical_model'))
+        
+        if model is None:
             print("No statistical model available for contribution analysis")
             return contributions
-        
-        model = self.model_results['statistical_model']
         historical_df = self.original_df[self.original_df['date'] < target_date]
         
         target_data = target_row[self.feature_columns].values.reshape(1, -1)
