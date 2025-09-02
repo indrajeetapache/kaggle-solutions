@@ -1,133 +1,707 @@
-#!/bin/bash
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, Tuple
+from sklearn.ensemble import IsolationForest
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
 
-# extraction.sh - PySpark job execution script
-# Usage: ./extraction.sh <env>
-# Environments: dev, uat, prod
-
-# Set script variables
-SCRIPT_NAME="extraction.sh"
-BUSINESS_DATE="2025-01-15"  # TODO: Update this business date as needed
-PYSPARK_SCRIPT_PATH="/path/to/your/pyspark/script.py"  # TODO: Set actual PySpark script path
-BAD_RECORDS_SCRIPT_PATH="/path/to/bad_Records.py"  # TODO: Set actual bad_Records.py path
-
-# Logging function
-log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME] $1"
-}
-
-# Validate input arguments
-if [ $# -ne 1 ]; then
-    log_message "ERROR: Invalid number of arguments"
-    log_message "Usage: $0 <environment>"
-    log_message "Valid environments: dev, uat, prod"
-    exit 1
-fi
-
-ENV=$1
-
-# Set spark-submit command and configurations based on environment
-case $ENV in
-    "dev")
-        SPARK_SUBMIT="/opt/spark/dev/bin/spark-submit"  # TODO: Set actual dev spark-submit path
-        EXECUTOR_INSTANCES="2"
-        EXECUTOR_CORES="2"
-        EXECUTOR_MEMORY="2g"
-        DRIVER_MEMORY="1g"
-        log_message "INFO: Using development environment"
-        ;;
-    "uat")
-        SPARK_SUBMIT="/opt/spark/uat/bin/spark-submit"  # TODO: Set actual uat spark-submit path
-        EXECUTOR_INSTANCES="4"
-        EXECUTOR_CORES="4"
-        EXECUTOR_MEMORY="4g"
-        DRIVER_MEMORY="2g"
-        log_message "INFO: Using UAT environment"
-        ;;
-    "prod")
-        SPARK_SUBMIT="/opt/spark/prod/bin/spark-submit"  # TODO: Set actual prod spark-submit path
-        EXECUTOR_INSTANCES="8"
-        EXECUTOR_CORES="4"
-        EXECUTOR_MEMORY="8g"
-        DRIVER_MEMORY="4g"
-        log_message "INFO: Using production environment"
-        ;;
-    *)
-        log_message "ERROR: Invalid environment '$ENV'"
-        log_message "Valid environments: dev, uat, prod"
-        exit 1
-        ;;
-esac
-
-# Validate spark-submit exists
-if [ ! -f "$SPARK_SUBMIT" ]; then
-    log_message "ERROR: spark-submit not found at: $SPARK_SUBMIT"
-    exit 1
-fi
-
-# Validate PySpark script exists
-if [ ! -f "$PYSPARK_SCRIPT_PATH" ]; then
-    log_message "ERROR: PySpark script not found at: $PYSPARK_SCRIPT_PATH"
-    exit 1
-fi
-
-# Display execution details
-log_message "INFO: Starting data extraction process"
-log_message "INFO: Environment: $ENV"
-log_message "INFO: Business Date: $BUSINESS_DATE"
-log_message "INFO: Spark Submit: $SPARK_SUBMIT"
-log_message "INFO: Executor Instances: $EXECUTOR_INSTANCES"
-log_message "INFO: Executor Cores: $EXECUTOR_CORES"
-log_message "INFO: Executor Memory: $EXECUTOR_MEMORY"
-log_message "INFO: Driver Memory: $DRIVER_MEMORY"
-log_message "INFO: PySpark Script: $PYSPARK_SCRIPT_PATH"
-log_message "INFO: Bad Records Script: $BAD_RECORDS_SCRIPT_PATH"
-
-# Execute PySpark job
-log_message "INFO: Executing PySpark job..."
-$SPARK_SUBMIT \
-    --master yarn \
-    --deploy-mode cluster \
-    --num-executors $EXECUTOR_INSTANCES \
-    --executor-cores $EXECUTOR_CORES \
-    --executor-memory $EXECUTOR_MEMORY \
-    --driver-memory $DRIVER_MEMORY \
-    --conf spark.sql.adaptive.enabled=true \
-    --conf spark.sql.adaptive.coalescePartitions.enabled=true \
-    --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB \
-    --conf spark.sql.adaptive.skewJoin.enabled=true \
-    --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
-    --conf spark.sql.execution.arrow.pyspark.enabled=true \
-    --conf spark.dynamicAllocation.enabled=false \
-    $PYSPARK_SCRIPT_PATH \
-    --business_date=$BUSINESS_DATE \
-    --env=$ENV
-
-# Check execution status
-SPARK_EXIT_CODE=$?
-if [ $SPARK_EXIT_CODE -eq 0 ]; then
-    log_message "INFO: PySpark job completed successfully"
-else
-    log_message "ERROR: PySpark job failed with exit code: $SPARK_EXIT_CODE"
-    exit $SPARK_EXIT_CODE
-fi
-
-# Process bad records if script exists
-if [ -f "$BAD_RECORDS_SCRIPT_PATH" ]; then
-    log_message "INFO: Processing bad records with business date: $BUSINESS_DATE"
-    python3 $BAD_RECORDS_SCRIPT_PATH --business_date=$BUSINESS_DATE --env=$ENV
+class EnhancedAnomalyExplainer:
+    def __init__(self, model_results: Dict[str, Any], original_df: pd.DataFrame):
+        """
+        Enhanced explainer with local neighbors, seasonal baselines, and counterfactuals.
+        
+        Args:
+            model_results: Results from LSTM+Statistical model ensemble
+            original_df: Original dataframe with date and feature columns
+        """
+        print("Initializing Enhanced Anomaly Explainer...")
+        self.model_results = model_results
+        self.original_df = original_df
+        self.feature_columns = [col for col in original_df.columns if col != 'date']
+        self._local_scaler = None
+        print(f"Loaded {len(self.feature_columns)} features for analysis")
+        
+    def explain_anomaly(self, target_date: str, top_n_features: int = 10) -> Dict[str, Any]:
+        """
+        Comprehensive anomaly explanation with counterfactual analysis.
+        
+        Returns explanation with top contributing features and actionable fix recommendations.
+        """
+        print(f"\n=== Analyzing anomaly for {target_date} ===")
+        
+        if target_date not in self.model_results.get('anomaly_scores', {}):
+            print(f"No anomaly detected for {target_date}")
+            return {'error': f"No anomaly detected for {target_date}"}
+        
+        target_row = self.original_df[self.original_df['date'] == target_date].iloc[0]
+        print(f"Target row found with {len(self.feature_columns)} feature values")
+        
+        # Method 1: Pattern deviation analysis
+        print("Computing pattern deviation contributions...")
+        lstm_contributions = self._get_pattern_deviation_contributions(target_date, target_row)
+        print(f"Pattern analysis complete: {len(lstm_contributions)} features analyzed")
+        
+        # Method 2: Statistical model perturbation with seasonal baselines
+        print("Computing statistical model contributions...")
+        stat_contributions = self._get_statistical_contributions(target_date, target_row)
+        print(f"Statistical analysis complete: {len(stat_contributions)} features analyzed")
+        
+        # Method 3: Local linear approximation with standardized neighbors
+        print("Computing local linear contributions...")
+        local_contributions = self._get_local_linear_contributions(target_date, target_row)
+        print(f"Local analysis complete: {len(local_contributions)} features analyzed")
+        
+        # Ensemble the explanations
+        print("Combining contribution scores...")
+        combined_contributions = self._ensemble_contributions(
+            lstm_contributions, stat_contributions, local_contributions
+        )
+        
+        # Sort and filter valid contributions
+        sorted_features = sorted(combined_contributions.items(), key=lambda x: x[1], reverse=True)
+        sorted_features = [(f, score) for f, score in sorted_features if not np.isnan(score)]
+        top_features = [f for f, _ in sorted_features[:top_n_features]]
+        
+        print(f"Top {len(top_features)} contributing features identified")
+        
+        # Generate counterfactual fix pack
+        print("Generating counterfactual recommendations...")
+        fixpack = self._counterfactual_fixpack(target_date, target_row, top_features, max_steps=5)
+        print(f"Generated {len(fixpack)} counterfactual recommendations")
+        
+        # Generate business-friendly explanations
+        print("Creating business explanations...")
+        explanations = self._generate_business_explanations(
+            combined_contributions, target_row, target_date, top_n_features
+        )
+        
+        result = {
+            'date': target_date,
+            'severity': self.model_results['anomaly_severity'].get(target_date, 'UNKNOWN'),
+            'consensus_score': round(self.model_results['anomaly_scores'][target_date]['consensus_score'], 4),
+            'top_contributing_features': explanations,
+            'counterfactual_fixpack': [
+                {'feature': f, 'delta_to_baseline': round(float(d), 6)} 
+                for f, d in fixpack
+            ],
+            'summary': self._generate_executive_summary(explanations, target_date),
+            'analysis_metadata': {
+                'baselines_used': 'rolling-median(56d) where available, fallback to global median',
+                'local_surrogate': 'k-NN neighbors in standardized feature space with linear regression',
+                'ensemble_weights': {
+                    'pattern_deviation': 0.4,
+                    'statistical_perturbation': 0.4, 
+                    'local_linear': 0.2
+                }
+            }
+        }
+        
+        print(f"Analysis complete. Severity: {result['severity']}")
+        return result
     
-    BAD_RECORDS_EXIT_CODE=$?
-    if [ $BAD_RECORDS_EXIT_CODE -eq 0 ]; then
-        log_message "INFO: Bad records processing completed successfully"
-    else
-        log_message "ERROR: Bad records processing failed with exit code: $BAD_RECORDS_EXIT_CODE"
-        exit $BAD_RECORDS_EXIT_CODE
-    fi
-else
-    log_message "WARNING: Bad records script not found at: $BAD_RECORDS_SCRIPT_PATH"
-fi
+    def _select_neighbors(self, historical_df: pd.DataFrame, target_row: pd.Series, k: int = 200) -> pd.DataFrame:
+        """
+        Select k-nearest neighbors in standardized feature space for local analysis.
+        
+        Args:
+            historical_df: Historical data to search
+            target_row: Target anomalous point
+            k: Number of neighbors to select
+            
+        Returns:
+            DataFrame with k nearest neighbors
+        """
+        if len(historical_df) < 20:
+            print(f"Insufficient historical data ({len(historical_df)} rows), using all available")
+            return historical_df
+            
+        X_hist = historical_df[self.feature_columns].values
+        
+        # Fit scaler on historical data
+        scaler = StandardScaler()
+        X_hist_std = scaler.fit_transform(X_hist)
+        
+        # Transform target point
+        x0_std = scaler.transform(target_row[self.feature_columns].values.reshape(1, -1))
+        
+        # Find k nearest neighbors
+        nn = NearestNeighbors(n_neighbors=min(k, len(X_hist)))
+        nn.fit(X_hist_std)
+        distances, indices = nn.kneighbors(x0_std, return_distance=True)
+        
+        # Store scaler for later use
+        self._local_scaler = scaler
+        
+        selected_neighbors = historical_df.iloc[indices[0]]
+        avg_distance = np.mean(distances[0])
+        print(f"Selected {len(selected_neighbors)} neighbors, avg distance: {avg_distance:.3f}")
+        
+        return selected_neighbors
+    
+    def _feature_baseline(self, feature: str, historical_df: pd.DataFrame) -> float:
+        """
+        Calculate seasonal-aware baseline for a feature using rolling median.
+        
+        Args:
+            feature: Feature name
+            historical_df: Historical data
+            
+        Returns:
+            Baseline value for perturbation analysis
+        """
+        if len(historical_df) >= 28:
+            # Use rolling median with 56-day window, minimum 14 days
+            rolling_baseline = historical_df[feature].rolling(
+                window=56, min_periods=14
+            ).median().iloc[-1]
+            
+            if not np.isnan(rolling_baseline):
+                return rolling_baseline
+        
+        # Fallback to global median
+        return historical_df[feature].median()
+    
+    def _get_pattern_deviation_contributions(self, target_date: str, target_row: pd.Series) -> Dict[str, float]:
+        """
+        Calculate pattern deviation contributions (proxy for LSTM reconstruction error).
+        Measures how much each feature deviates from expected temporal patterns.
+        """
+        contributions = {}
+        historical_df = self.original_df[self.original_df['date'] < target_date].tail(50)
+        
+        if len(historical_df) == 0:
+            print("No historical data available for pattern analysis")
+            return contributions
+        
+        print(f"Analyzing pattern deviations using {len(historical_df)} historical points")
+        
+        for feature in self.feature_columns:
+            if feature not in target_row.index:
+                continue
+                
+            current_val = target_row[feature]
+            hist_values = historical_df[feature].dropna()
+            
+            if len(hist_values) < 3:
+                contributions[feature] = 0
+                continue
+            
+            # Calculate temporal pattern deviation
+            recent_trend = hist_values.tail(7).mean()
+            seasonal_pattern = self._get_seasonal_expectation(hist_values, len(hist_values))
+            expected_value = 0.7 * recent_trend + 0.3 * seasonal_pattern
+            
+            # Pattern reconstruction error approximation
+            reconstruction_error = abs(current_val - expected_value) / (hist_values.std() + 1e-8)
+            
+            # Weight by feature volatility (stable features get higher weight when they deviate)
+            volatility = hist_values.std() / (abs(hist_values.mean()) + 1e-8)
+            volatility_weight = 1 / (volatility + 1e-8)
+            
+            contributions[feature] = reconstruction_error * min(volatility_weight, 10)
+        
+        return contributions
+    
+    def _get_statistical_contributions(self, target_date: str, target_row: pd.Series) -> Dict[str, float]:
+        """
+        Calculate statistical model contributions using seasonal-aware perturbation.
+        Uses rolling median baselines instead of global medians for more accurate attribution.
+        """
+        contributions = {}
+        
+        if 'statistical_model' not in self.model_results:
+            print("No statistical model available for contribution analysis")
+            return contributions
+        
+        model = self.model_results['statistical_model']
+        historical_df = self.original_df[self.original_df['date'] < target_date]
+        
+        target_data = target_row[self.feature_columns].values.reshape(1, -1)
+        baseline_score = abs(model.decision_function(target_data)[0])
+        
+        print(f"Baseline anomaly score: {baseline_score:.4f}")
+        
+        # Feature perturbation with seasonal baselines
+        for i, feature in enumerate(self.feature_columns):
+            perturbed_data = target_data.copy()
+            
+            # Use seasonal-aware baseline instead of simple median
+            seasonal_baseline = self._feature_baseline(feature, historical_df)
+            perturbed_data[0, i] = seasonal_baseline
+            
+            perturbed_score = abs(model.decision_function(perturbed_data)[0])
+            
+            # Contribution = reduction in anomaly score when feature is normalized
+            delta = baseline_score - perturbed_score
+            contributions[feature] = max(0.0, float(delta))
+        
+        return contributions
+    
+    def _get_local_linear_contributions(self, target_date: str, target_row: pd.Series) -> Dict[str, float]:
+        """
+        Use local linear approximation with standardized neighbors for feature importance.
+        Creates interpretable model around the anomalous point using k-NN neighbors.
+        """
+        contributions = {}
+        historical_df = self.original_df[self.original_df['date'] < target_date].tail(90)
+        
+        if len(historical_df) < 20:
+            print(f"Insufficient data for local analysis ({len(historical_df)} points)")
+            return contributions
+        
+        # Select truly local neighbors in standardized space
+        local_neighbors = self._select_neighbors(historical_df, target_row, k=200)
+        
+        X = local_neighbors[self.feature_columns].values
+        scaler = self._local_scaler or StandardScaler().fit(X)
+        X_std = scaler.transform(X)
+        
+        # Create target: radial distance from local normal center
+        normal_center = np.median(X_std, axis=0)
+        y_distances = np.sqrt(((X_std - normal_center) ** 2).sum(axis=1))
+        
+        try:
+            # Fit linear model in standardized space
+            model = LinearRegression()
+            model.fit(X_std, y_distances)
+            
+            # Transform target point to standardized space
+            x0_std = scaler.transform(target_row[self.feature_columns].values.reshape(1, -1))[0]
+            
+            # Feature importance = coefficient * standardized feature value
+            for i, feature in enumerate(self.feature_columns):
+                contributions[feature] = abs(model.coef_[i]) * abs(x0_std[i])
+                
+            print(f"Local linear model R² score: {model.score(X_std, y_distances):.3f}")
+            
+        except Exception as e:
+            print(f"Local linear model failed, using distance fallback: {e}")
+            # Fallback to standardized distance contributions
+            x0_std = scaler.transform(target_row[self.feature_columns].values.reshape(1, -1))[0]
+            for i, feature in enumerate(self.feature_columns):
+                contributions[feature] = abs(x0_std[i] - normal_center[i])
+        
+        return contributions
+    
+    def _normalize_score(self, score: float, all_scores: List[float]) -> float:
+        """
+        Robust score normalization handling edge cases.
+        
+        Args:
+            score: Score to normalize
+            all_scores: All scores for normalization reference
+            
+        Returns:
+            Normalized score between 0 and 1
+        """
+        if not all_scores:
+            return 0.0
+            
+        mx, mn = max(all_scores), min(all_scores)
+        
+        # Handle case where all scores are equal
+        if mx == mn:
+            return 0.5 if score > 0 else 0.0
+            
+        # Robust normalization with epsilon to prevent division by zero
+        return (score - mn) / (mx - mn + 1e-12)
+    
+    def _ensemble_contributions(self, lstm_contrib: Dict, stat_contrib: Dict, 
+                              local_contrib: Dict) -> Dict[str, float]:
+        """
+        Combine contributions from different methods with robust normalization.
+        """
+        combined = {}
+        all_features = set(lstm_contrib.keys()) | set(stat_contrib.keys()) | set(local_contrib.keys())
+        
+        # Extract weights from model configuration (handle nested structure)
+        model_config = self.model_results.get('model_config') or self.model_results.get('model_results', {}).get('model_config', {})
+        lstm_weight = model_config.get('consensus_weight_lstm', 0.4)
+        stat_weight = model_config.get('consensus_weight_statistical', 0.4)
+        local_weight = 0.2
+        
+        print(f"Ensembling with weights - Pattern: {lstm_weight}, Statistical: {stat_weight}, Local: {local_weight}")
+        
+        for feature in all_features:
+            lstm_score = lstm_contrib.get(feature, 0)
+            stat_score = stat_contrib.get(feature, 0)
+            local_score = local_contrib.get(feature, 0)
+            
+            # Robust normalization for each contribution type
+            norm_lstm = self._normalize_score(lstm_score, list(lstm_contrib.values()))
+            norm_stat = self._normalize_score(stat_score, list(stat_contrib.values()))
+            norm_local = self._normalize_score(local_score, list(local_contrib.values()))
+            
+            # Weighted ensemble
+            combined[feature] = (
+                lstm_weight * norm_lstm +
+                stat_weight * norm_stat +
+                local_weight * norm_local
+            )
+        
+        return combined
+    
+    def _counterfactual_fixpack(self, target_date: str, target_row: pd.Series, 
+                               top_features: List[str], max_steps: int = 5) -> List[Tuple[str, float]]:
+        """
+        Generate counterfactual "what-to-fix" recommendations using greedy search.
+        
+        Args:
+            target_date: Date of anomaly
+            target_row: Anomalous data point
+            top_features: Features to consider for fixes
+            max_steps: Maximum number of features to include in fix pack
+            
+        Returns:
+            List of (feature, delta_to_apply) tuples for remediation
+        """
+        if 'statistical_model' not in self.model_results:
+            print("No statistical model available for counterfactual analysis")
+            return []
+        
+        model = self.model_results['statistical_model']
+        historical_df = self.original_df[self.original_df['date'] < target_date]
+        
+        # Initialize with current feature values
+        x_current = target_row[self.feature_columns].values.astype(float)
+        x_modified = x_current.copy()
+        
+        baseline_score = abs(model.decision_function(x_modified.reshape(1, -1))[0])
+        current_score = baseline_score
+        
+        fixpack = []
+        steps = 0
+        
+        print(f"Starting counterfactual search with baseline score: {baseline_score:.4f}")
+        
+        for feature in top_features:
+            if steps >= max_steps:
+                break
+                
+            feature_idx = self.feature_columns.index(feature)
+            
+            # Get seasonal baseline for this feature
+            baseline_value = self._feature_baseline(feature, historical_df)
+            
+            # Try applying this fix
+            x_trial = x_modified.copy()
+            x_trial[feature_idx] = baseline_value
+            
+            trial_score = abs(model.decision_function(x_trial.reshape(1, -1))[0])
+            
+            # If this change reduces the anomaly score, include it
+            if trial_score < current_score:
+                delta = baseline_value - x_modified[feature_idx]
+                fixpack.append((feature, delta))
+                
+                # Apply the change for next iteration
+                x_modified[feature_idx] = baseline_value
+                current_score = trial_score
+                
+                print(f"Step {steps + 1}: Adjusting {feature} by {delta:.4f} -> score: {trial_score:.4f}")
+            
+            steps += 1
+        
+        final_improvement = baseline_score - current_score
+        print(f"Counterfactual analysis complete. Total score improvement: {final_improvement:.4f}")
+        
+        return fixpack
+    
+    def _generate_business_explanations(self, contributions: Dict[str, float], 
+                                      target_row: pd.Series, target_date: str, 
+                                      top_n: int) -> List[Dict[str, Any]]:
+        """Generate business-friendly explanations for top contributing features."""
+        sorted_features = sorted(contributions.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        
+        explanations = []
+        historical_df = self.original_df[self.original_df['date'] < target_date]
+        
+        print(f"Generating explanations for top {len(sorted_features)} features")
+        
+        for feature, contribution_score in sorted_features:
+            explanation = self._create_feature_explanation(
+                feature, target_row[feature], historical_df, contribution_score, target_date
+            )
+            explanations.append(explanation)
+        
+        return explanations
+    
+    def _create_feature_explanation(self, feature: str, current_value: float, 
+                                  historical_df: pd.DataFrame, contribution_score: float,
+                                  target_date: str) -> Dict[str, Any]:
+        """Create detailed, business-friendly explanation for a single feature."""
+        
+        # Parse feature components
+        parts = feature.split('_')
+        base_column = parts[0]
+        metric_type = '_'.join(parts[1:]) if len(parts) > 1 else 'value'
+        
+        # Get historical context
+        hist_values = historical_df[feature].dropna() if len(historical_df) > 0 else pd.Series()
+        
+        if len(hist_values) == 0:
+            return {
+                'feature': feature,
+                'importance': round(contribution_score, 4),
+                'explanation': f"No historical data available for {feature}",
+                'severity': 'UNKNOWN',
+                'recommendation': 'Gather more historical data for this metric'
+            }
+        
+        # Statistical analysis
+        hist_mean = hist_values.mean()
+        hist_std = hist_values.std()
+        z_score = (current_value - hist_mean) / (hist_std + 1e-8)
+        percentile = (hist_values <= current_value).mean() * 100
+        
+        # Determine direction and magnitude
+        direction = "increased" if current_value > hist_mean else "decreased"
+        deviation_pct = ((current_value - hist_mean) / (abs(hist_mean) + 1e-8)) * 100
+        
+        # Business severity classification
+        severity = self._classify_severity(abs(z_score), abs(deviation_pct))
+        
+        # Generate human-readable explanation
+        business_explanation = self._generate_readable_explanation(
+            base_column, metric_type, direction, abs(deviation_pct), 
+            severity, percentile, current_value, hist_mean
+        )
+        
+        # Generate actionable recommendation
+        recommendation = self._generate_recommendation(severity, base_column, metric_type, z_score)
+        
+        return {
+            'feature': feature,
+            'base_column': base_column,
+            'metric_type': self._translate_metric_name(metric_type),
+            'current_value': round(current_value, 6),
+            'historical_average': round(hist_mean, 6),
+            'importance_score': round(contribution_score, 4),
+            'z_score': round(z_score, 3),
+            'deviation_percentage': round(deviation_pct, 2),
+            'percentile': round(percentile, 1),
+            'severity': severity,
+            'explanation': business_explanation,
+            'recommendation': recommendation
+        }
+    
+    def _translate_metric_name(self, metric_type: str) -> str:
+        """
+        Dynamically translate technical metric names to business terms.
+        Handles variable time windows and feature patterns.
+        """
+        import re
+        
+        # Static base translations
+        base_translations = {
+            'Mean': 'Average Value',
+            'StandardDeviation': 'Data Variability', 
+            'Completeness': 'Data Completeness Rate',
+            'CountDistinct': 'Unique Value Count',
+            'Entropy': 'Data Diversity',
+            'missingCount': 'Missing Data Count',
+            'zeroCount': 'Zero Value Count',
+            'negativeCount': 'Negative Value Count',
+            'Correlation': 'Data Relationship Strength',
+            'Minimum': 'Minimum Value',
+            'Maximum': 'Maximum Value',
+            'Sum': 'Total Sum',
+            'Uniqueness': 'Data Uniqueness',
+            'Distinctness': 'Value Distinctness'
+        }
+        
+        # Check for exact match first
+        if metric_type in base_translations:
+            return base_translations[metric_type]
+        
+        # Dynamic pattern matching for time-based features
+        
+        # Rolling window patterns: rolling_7d_mean -> "7-Day Rolling Average"
+        rolling_pattern = re.match(r'rolling_(\d+)d?_(\w+)', metric_type)
+        if rolling_pattern:
+            days, stat = rolling_pattern.groups()
+            stat_name = base_translations.get(stat.title(), stat.replace('_', ' ').title())
+            return f"{days}-Day Rolling {stat_name}"
+        
+        # Z-score patterns: zscore_14d -> "14-Day Trend Deviation"
+        zscore_pattern = re.match(r'zscore_(\d+)d?', metric_type)
+        if zscore_pattern:
+            days = zscore_pattern.group(1)
+            return f"{days}-Day Trend Deviation"
+        
+        # Lag patterns: lag_3d -> "3-Day Lag"
+        lag_pattern = re.match(r'lag_(\d+)d?', metric_type)
+        if lag_pattern:
+            days = lag_pattern.group(1)
+            return f"{days}-Day Lag Value"
+        
+        # Difference patterns: diff_7d -> "7-Day Difference"
+        diff_pattern = re.match(r'diff_(\d+)d?', metric_type)
+        if diff_pattern:
+            days = diff_pattern.group(1)
+            return f"{days}-Day Difference"
+        
+        # Ratio patterns: ratio_30d -> "30-Day Ratio"
+        ratio_pattern = re.match(r'ratio_(\d+)d?', metric_type)
+        if ratio_pattern:
+            days = ratio_pattern.group(1)
+            return f"{days}-Day Ratio"
+        
+        # Trend patterns: trend_21d -> "21-Day Trend"
+        trend_pattern = re.match(r'trend_(\d+)d?', metric_type)
+        if trend_pattern:
+            days = trend_pattern.group(1)
+            return f"{days}-Day Trend Analysis"
+        
+        # Anomaly patterns: anomaly_14d -> "14-Day Anomaly Score"
+        anomaly_pattern = re.match(r'anomaly_(\d+)d?', metric_type)
+        if anomaly_pattern:
+            days = anomaly_pattern.group(1)
+            return f"{days}-Day Anomaly Score"
+        
+        # Quantile patterns: ApproxQuantiles_0.75_rolling_14d_mean
+        quantile_pattern = re.match(r'ApproxQuantiles_(\d+\.?\d*)_(.+)', metric_type)
+        if quantile_pattern:
+            quantile_val, remainder = quantile_pattern.groups()
+            quantile_pct = int(float(quantile_val) * 100)
+            remainder_translated = self._translate_metric_name(remainder)
+            return f"{quantile_pct}th Percentile {remainder_translated}"
+        
+        # Deseasonalized patterns
+        if metric_type.startswith('deseasonalized_'):
+            base_metric = metric_type[15:]  # Remove 'deseasonalized_' prefix
+            base_translated = self._translate_metric_name(base_metric)
+            return f"Deseasonalized {base_translated}"
+        
+        # Fallback: clean up underscores and capitalize
+        return metric_type.replace('_', ' ').title()
+    
+    def _generate_readable_explanation(self, base_column: str, metric_type: str, 
+                                     direction: str, deviation_pct: float, 
+                                     severity: str, percentile: float,
+                                     current_val: float, hist_mean: float) -> str:
+        """Generate business-friendly explanation text."""
+        
+        magnitude_word = "drastically" if deviation_pct >= 200 else \
+                        "significantly" if deviation_pct >= 100 else \
+                        "moderately" if deviation_pct >= 50 else \
+                        "slightly"
+        
+        readable_metric = self._translate_metric_name(metric_type)
+        
+        explanation = f"The {readable_metric.lower()} for '{base_column}' has {magnitude_word} {direction}"
+        
+        if deviation_pct >= 10:
+            explanation += f" by {deviation_pct:.1f}% from normal levels"
+        
+        explanation += f". This value is at the {percentile:.0f}th percentile of historical observations"
+        
+        if severity in ['HIGH', 'CRITICAL']:
+            explanation += f", indicating a {severity.lower()}-priority data quality issue"
+        
+        explanation += "."
+        
+        return explanation
+    
+    def _classify_severity(self, abs_z_score: float, abs_deviation_pct: float) -> str:
+        """Classify anomaly severity for business users."""
+        if abs_z_score >= 4 or abs_deviation_pct >= 300:
+            return 'CRITICAL'
+        elif abs_z_score >= 3 or abs_deviation_pct >= 150:
+            return 'HIGH'
+        elif abs_z_score >= 2 or abs_deviation_pct >= 75:
+            return 'MEDIUM'
+        else:
+            return 'LOW'
+    
+    def _generate_recommendation(self, severity: str, base_column: str, 
+                               metric_type: str, z_score: float) -> str:
+        """Generate actionable recommendations."""
+        
+        if severity == 'CRITICAL':
+            return f"IMMEDIATE ACTION REQUIRED: Investigate {base_column} data pipeline and source systems immediately. This level of deviation suggests potential data corruption or system failure."
+        
+        elif severity == 'HIGH':
+            return f"HIGH PRIORITY: Review {base_column} data collection process within 4 hours. Check for upstream changes, system maintenance, or data source modifications."
+        
+        elif severity == 'MEDIUM':
+            if 'Completeness' in metric_type or 'missing' in metric_type.lower():
+                return f"MONITOR: Increased missing data in {base_column}. Review data ingestion logs and validate source system health."
+            elif 'Count' in metric_type:
+                return f"MONITOR: Unusual record counts for {base_column}. Verify if this aligns with expected business activity."
+            else:
+                return f"MONITOR: {base_column} showing unusual patterns. Schedule review within 24-48 hours."
+        
+        else:  # LOW
+            return f"TRACK: Include {base_column} in next routine data quality review cycle."
+    
+    def _generate_executive_summary(self, explanations: List[Dict], target_date: str) -> str:
+        """Generate executive summary for business stakeholders."""
+        
+        if not explanations:
+            return f"No significant anomalies detected for {target_date}."
+        
+        critical_count = sum(1 for exp in explanations if exp['severity'] == 'CRITICAL')
+        high_count = sum(1 for exp in explanations if exp['severity'] == 'HIGH')
+        
+        summary = f"Data Quality Alert for {target_date}: "
+        
+        if critical_count > 0:
+            summary += f"{critical_count} critical issue(s) requiring immediate attention. "
+        
+        if high_count > 0:
+            summary += f"{high_count} high-priority issue(s) need review within 4 hours. "
+        
+        if critical_count == 0 and high_count == 0:
+            summary += "Medium to low-priority deviations detected. Routine monitoring recommended."
+        
+        # Add most impacted data source
+        top_feature = explanations[0]
+        summary += f" Primary concern: {top_feature['base_column']} showing {top_feature['severity'].lower()}-severity anomalies in {top_feature['metric_type'].lower()}."
+        
+        return summary
+    
+    def _get_seasonal_expectation(self, hist_values: pd.Series, current_position: int) -> float:
+        """Simple seasonal pattern detection for weekly cycles."""
+        if len(hist_values) < 14:
+            return hist_values.mean()
+        
+        # Look for weekly patterns (assuming daily data)
+        weekly_position = current_position % 7
+        weekly_values = hist_values.iloc[weekly_position::7]
+        
+        return weekly_values.mean() if len(weekly_values) > 0 else hist_values.mean()
 
-log_message "INFO: Data extraction process completed successfully"
-log_message "INFO: Business date processed: $BUSINESS_DATE"
-
-exit 0
+# Usage function with comprehensive logging
+def explain_detected_anomalies(model_results, original_df, top_features=10):
+    """
+    Main function to explain all detected anomalies with detailed logging.
+    
+    Args:
+        model_results: Results from LSTM+Statistical ensemble
+        original_df: Original data with date column
+        top_features: Number of top features to explain
+        
+    Returns:
+        Dictionary with explanations for each anomalous date
+    """
+    print(f"Starting anomaly explanation for {len(model_results.get('anomalous_dates', []))} dates")
+    print(f"Will analyze top {top_features} features per anomaly")
+    
+    explainer = EnhancedAnomalyExplainer(model_results, original_df)
+    
+    explanations = {}
+    for anomaly_date in model_results.get('anomalous_dates', []):
+        print(f"\n{'='*50}")
+        explanation = explainer.explain_anomaly(anomaly_date, top_features)
+        explanations[anomaly_date] = explanation
+        
+        # Print summary for immediate visibility
+        if 'error' not in explanation:
+            print(f"SUMMARY: {explanation['summary']}")
+            print(f"Fix recommendations: {len(explanation['counterfactual_fixpack'])} features identified")
+    
+    print(f"\n{'='*50}")
+    print(f"Analysis complete for {len(explanations)} anomalous dates")
+    return explanations
