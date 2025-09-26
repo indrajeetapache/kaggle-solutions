@@ -1,19 +1,374 @@
-# Check PyTorch version
-python -c "import torch; print(f'torch=={torch.__version__}')"
+from pyspark.sql import DataFrame as SparkDataFrame
+from pyspark.sql.functions import col, approx_count_distinct, count, stddev, mean, min, max
+from typing import Dict, List, Tuple
+import pandas as pd
 
-# Check all versions at once
-python -c "
-import torch, numpy, pandas, sklearn, transformers, statsmodels
-import matplotlib, seaborn, scipy, einops, pytorch_lightning
-print(f'torch=={torch.__version__}')
-print(f'numpy=={numpy.__version__}')
-print(f'pandas=={pandas.__version__}')
-print(f'scikit-learn=={sklearn.__version__}')
-print(f'transformers=={transformers.__version__}')
-print(f'statsmodels=={statsmodels.__version__}')
-print(f'matplotlib=={matplotlib.__version__}')
-print(f'seaborn=={seaborn.__version__}')
-print(f'scipy=={scipy.__version__}')
-print(f'einops=={einops.__version__}')
-print(f'pytorch-lightning=={pytorch_lightning.__version__}')
-"
+# Configuration
+CATEGORICAL_THRESHOLD = 20
+UNIQUE_RATIO_THRESHOLD = 0.95
+MODE_DOMINANCE_THRESHOLD = 0.5
+
+PROFILING_METRICS = [
+    'correlation', 'completeness', 'uniqueness', 'minimum', 'mean', 'maximum',
+    'entropy', 'approx_quantiles', 'max_length', 'size', 'min_length', 'sum',
+    'unique_value_ratio', 'count_distinct', 'distinctness', 'standard_deviation',
+    'negative_count', 'histogram', 'data_type', 'zero_count', 'missing_count'
+]
+
+COLUMN_TYPE_RULES = {
+    'identifier': {
+        'appropriate': ['size', 'completeness', 'missing_count', 'data_type', 
+                       'uniqueness', 'unique_value_ratio', 'count_distinct', 
+                       'distinctness', 'minimum', 'maximum'],
+        'inappropriate': ['mean', 'standard_deviation', 'sum', 'approx_quantiles',
+                         'correlation', 'negative_count', 'zero_count', 'entropy']
+    },
+    'categorical': {
+        'appropriate': ['size', 'completeness', 'missing_count', 'data_type',
+                       'uniqueness', 'count_distinct', 'histogram', 'entropy',
+                       'max_length', 'min_length'],
+        'inappropriate': ['mean', 'standard_deviation', 'sum', 'approx_quantiles',
+                         'correlation', 'negative_count', 'zero_count']
+    },
+    'continuous': {
+        'appropriate': ['size', 'completeness', 'missing_count', 'data_type',
+                       'mean', 'standard_deviation', 'minimum', 'maximum',
+                       'approx_quantiles', 'sum', 'histogram', 'negative_count',
+                       'zero_count', 'correlation'],
+        'inappropriate': ['max_length', 'min_length', 'entropy']
+    },
+    'constant': {
+        'appropriate': ['size', 'completeness', 'missing_count', 'data_type'],
+        'inappropriate': ['mean', 'standard_deviation', 'sum', 'approx_quantiles',
+                         'correlation', 'histogram', 'entropy', 'uniqueness',
+                         'negative_count', 'zero_count']
+    }
+}
+
+def analyze_spark_dataframe(df: SparkDataFrame, sample_size: int = 100000) -> Dict:
+    """
+    Analyze Spark DataFrame column characteristics efficiently
+    """
+    row_count = df.count()
+    
+    # Sample if needed
+    if row_count > sample_size:
+        df_sample = df.sample(fraction=sample_size/row_count, seed=42)
+        sample_row_count = df_sample.count()
+    else:
+        df_sample = df
+        sample_row_count = row_count
+    
+    # Build aggregation expressions
+    agg_exprs = []
+    numeric_cols = []
+    
+    for col_name in df.columns:
+        agg_exprs.extend([
+            approx_count_distinct(col(col_name)).alias(f"{col_name}_unique"),
+            count(col(col_name)).alias(f"{col_name}_non_null")
+        ])
+        
+        # Check if numeric column
+        col_type = str(df.schema[col_name].dataType)
+        if col_type in ['IntegerType', 'LongType', 'FloatType', 'DoubleType']:
+            numeric_cols.append(col_name)
+            agg_exprs.extend([
+                mean(col(col_name)).alias(f"{col_name}_mean"),
+                stddev(col(col_name)).alias(f"{col_name}_stddev"),
+                min(col(col_name)).alias(f"{col_name}_min"),
+                max(col(col_name)).alias(f"{col_name}_max")
+            ])
+    
+    # Execute aggregation
+    agg_result = df_sample.agg(*agg_exprs).collect()[0].asDict()
+    
+    # Process results
+    results = {}
+    for col_name in df.columns:
+        unique_count = agg_result[f"{col_name}_unique"]
+        non_null_count = agg_result[f"{col_name}_non_null"]
+        
+        col_stats = {
+            'unique_count': unique_count,
+            'unique_ratio': unique_count / sample_row_count if sample_row_count > 0 else 0,
+            'null_ratio': (sample_row_count - non_null_count) / sample_row_count if sample_row_count > 0 else 0,
+            'row_count': sample_row_count,
+            'is_numeric': col_name in numeric_cols
+        }
+        
+        # Add numeric stats if available
+        if col_name in numeric_cols:
+            col_stats['numeric_stats'] = {
+                'mean': agg_result.get(f"{col_name}_mean"),
+                'stddev': agg_result.get(f"{col_name}_stddev"),
+                'min_val': agg_result.get(f"{col_name}_min"),
+                'max_val': agg_result.get(f"{col_name}_max")
+            }
+        
+        # Get mode (separate query for performance)
+        mode_info = df_sample.groupBy(col_name).count().orderBy(col("count").desc()).limit(1).collect()
+        if mode_info:
+            col_stats['mode_frequency'] = mode_info[0]['count']
+            col_stats['mode_ratio'] = mode_info[0]['count'] / sample_row_count
+        else:
+            col_stats['mode_frequency'] = 0
+            col_stats['mode_ratio'] = 0
+        
+        results[col_name] = col_stats
+    
+    return results
+
+def analyze_pandas_dataframe(df: pd.DataFrame) -> Dict:
+    """
+    Analyze Pandas DataFrame column characteristics
+    """
+    results = {}
+    row_count = len(df)
+    
+    for col_name in df.columns:
+        col_data = df[col_name]
+        unique_count = col_data.nunique()
+        null_count = col_data.isnull().sum()
+        
+        col_stats = {
+            'unique_count': unique_count,
+            'unique_ratio': unique_count / row_count if row_count > 0 else 0,
+            'null_ratio': null_count / row_count if row_count > 0 else 0,
+            'row_count': row_count,
+            'is_numeric': pd.api.types.is_numeric_dtype(col_data)
+        }
+        
+        # Mode analysis
+        if not col_data.empty:
+            mode_series = col_data.value_counts()
+            if len(mode_series) > 0:
+                col_stats['mode_frequency'] = mode_series.iloc[0]
+                col_stats['mode_ratio'] = mode_series.iloc[0] / row_count
+            else:
+                col_stats['mode_frequency'] = 0
+                col_stats['mode_ratio'] = 0
+        
+        # Numeric statistics
+        if pd.api.types.is_numeric_dtype(col_data):
+            col_stats['numeric_stats'] = {
+                'mean': col_data.mean(),
+                'stddev': col_data.std(),
+                'min_val': col_data.min(),
+                'max_val': col_data.max()
+            }
+        
+        results[col_name] = col_stats
+    
+    return results
+
+def classify_column_type(col_stats: Dict) -> Tuple[str, float, str]:
+    """
+    Classify column type based on statistics
+    Returns: (column_type, confidence, reasoning)
+    """
+    # Check constant
+    if col_stats['unique_count'] <= 1:
+        return 'constant', 1.0, f"Only {col_stats['unique_count']} unique value(s)"
+    
+    # Check identifier
+    if col_stats['unique_ratio'] > UNIQUE_RATIO_THRESHOLD:
+        return 'identifier', col_stats['unique_ratio'], f"High uniqueness ratio: {col_stats['unique_ratio']:.3f}"
+    
+    # Check categorical by cardinality
+    if col_stats['unique_count'] <= CATEGORICAL_THRESHOLD:
+        confidence = 1.0 - (col_stats['unique_count'] / CATEGORICAL_THRESHOLD)
+        return 'categorical', confidence, f"Low cardinality: {col_stats['unique_count']} unique values"
+    
+    # Check categorical by mode dominance
+    if col_stats.get('mode_ratio', 0) > MODE_DOMINANCE_THRESHOLD:
+        return 'categorical', col_stats['mode_ratio'], f"Mode dominance: {col_stats['mode_ratio']:.3f}"
+    
+    # Check continuous
+    if col_stats.get('is_numeric') and col_stats.get('numeric_stats'):
+        stddev = col_stats['numeric_stats'].get('stddev', 0)
+        if stddev and stddev > 0:
+            return 'continuous', 0.8, f"Numeric with variation (std: {stddev:.3f})"
+    
+    return 'categorical', 0.5, "Mixed or unclear pattern"
+
+def validate_metrics_for_column(col_stats: Dict) -> Dict:
+    """
+    Validate which metrics are appropriate for this column
+    """
+    column_type, confidence, reasoning = classify_column_type(col_stats)
+    
+    if column_type not in COLUMN_TYPE_RULES:
+        return {
+            'column_type': column_type,
+            'confidence': confidence,
+            'reasoning': reasoning,
+            'appropriate_metrics': ['size', 'completeness', 'missing_count'],
+            'inappropriate_metrics': [],
+            'questionable_metrics': PROFILING_METRICS
+        }
+    
+    rules = COLUMN_TYPE_RULES[column_type]
+    appropriate = rules['appropriate']
+    inappropriate = rules['inappropriate']
+    
+    questionable = [m for m in PROFILING_METRICS 
+                   if m not in appropriate and m not in inappropriate]
+    
+    return {
+        'column_type': column_type,
+        'confidence': confidence,
+        'reasoning': reasoning,
+        'appropriate_metrics': appropriate,
+        'inappropriate_metrics': inappropriate,
+        'questionable_metrics': questionable
+    }
+
+def audit_profiling_setup(df, current_applied_metrics: Dict[str, List[str]] = None, 
+                         backend: str = 'pyspark') -> Dict:
+    """
+    Complete audit of profiling setup
+    
+    Args:
+        df: DataFrame (PySpark or Pandas)
+        current_applied_metrics: Dict of {column_name: [list_of_applied_metrics]}
+        backend: 'pyspark' or 'pandas'
+    
+    Returns:
+        Complete audit report
+    """
+    print("Analyzing column characteristics...")
+    
+    if backend == 'pyspark':
+        col_analysis = analyze_spark_dataframe(df)
+    else:
+        col_analysis = analyze_pandas_dataframe(df)
+    
+    print("Validating metric appropriateness...")
+    validation_results = {}
+    
+    for col_name, col_stats in col_analysis.items():
+        validation = validate_metrics_for_column(col_stats)
+        validation_results[col_name] = validation
+    
+    # Calculate mismatches if current metrics provided
+    mismatches = {}
+    if current_applied_metrics:
+        for col_name, validation in validation_results.items():
+            if col_name in current_applied_metrics:
+                applied = set(current_applied_metrics[col_name])
+                inappropriate = set(validation['inappropriate_metrics'])
+                unnecessary = applied.intersection(inappropriate)
+                
+                if unnecessary:
+                    mismatches[col_name] = {
+                        'column_type': validation['column_type'],
+                        'confidence': validation['confidence'],
+                        'unnecessary_metrics': list(unnecessary),
+                        'reasoning': validation['reasoning']
+                    }
+    
+    # Generate summary
+    summary = {
+        'total_columns': len(validation_results),
+        'columns_by_type': {},
+        'total_mismatches': len(mismatches)
+    }
+    
+    for validation in validation_results.values():
+        col_type = validation['column_type']
+        summary['columns_by_type'][col_type] = summary['columns_by_type'].get(col_type, 0) + 1
+    
+    return {
+        'validations': validation_results,
+        'mismatches': mismatches,
+        'summary': summary
+    }
+
+def print_audit_report(audit_results: Dict):
+    """
+    Print human-readable audit report
+    """
+    summary = audit_results['summary']
+    validations = audit_results['validations']
+    mismatches = audit_results['mismatches']
+    
+    print("\n" + "="*50)
+    print("PROFILING METRICS VALIDATION REPORT")
+    print("="*50)
+    
+    print(f"Total columns analyzed: {summary['total_columns']}")
+    print(f"Column type distribution:")
+    for col_type, count in summary['columns_by_type'].items():
+        print(f"  {col_type}: {count} columns")
+    
+    if summary['total_mismatches'] > 0:
+        print(f"\nProblematic applications: {summary['total_mismatches']}")
+        print("\nCOLUMNS WITH INAPPROPRIATE METRICS:")
+        print("-" * 50)
+        
+        for col_name, mismatch in mismatches.items():
+            print(f"\n{col_name} ({mismatch['column_type']}) - confidence: {mismatch['confidence']:.2f}")
+            print(f"  Reason: {mismatch['reasoning']}")
+            print(f"  Remove: {mismatch['unnecessary_metrics']}")
+    else:
+        print("\nNo inappropriate metric applications found!")
+
+def get_recommendations_for_column(col_name: str, audit_results: Dict) -> Dict:
+    """
+    Get specific recommendations for a single column
+    """
+    if col_name not in audit_results['validations']:
+        return {'error': f'Column {col_name} not found'}
+    
+    validation = audit_results['validations'][col_name]
+    return {
+        'column_type': validation['column_type'],
+        'confidence': validation['confidence'],
+        'reasoning': validation['reasoning'],
+        'should_use': validation['appropriate_metrics'],
+        'should_not_use': validation['inappropriate_metrics'],
+        'review_needed': validation['questionable_metrics']
+    }
+
+# Example usage function
+def example_usage():
+    """
+    Example of how to use the functions
+    """
+    # Your current metrics setup
+    current_metrics = {
+        'customer_id': ['mean', 'standard_deviation', 'correlation', 'sum'],
+        'age': ['mean', 'standard_deviation', 'approx_quantiles'],
+        'status_code': ['mean', 'standard_deviation'],
+        'transaction_amount': ['mean', 'standard_deviation', 'approx_quantiles']
+    }
+    
+    # Usage steps:
+    print("Usage:")
+    print("1. audit_results = audit_profiling_setup(your_df, current_metrics, 'pyspark')")
+    print("2. print_audit_report(audit_results)")
+    print("3. recommendations = get_recommendations_for_column('column_name', audit_results)")
+    
+    return current_metrics
+
+if __name__ == "__main__":
+    example_usage()
+
+
+
+# 1. Run audit
+current_metrics = {
+    'customer_id': ['mean', 'standard_deviation', 'sum'],
+    'age': ['mean', 'standard_deviation', 'approx_quantiles'],
+    'status': ['mean', 'histogram']
+}
+
+audit_results = audit_profiling_setup(spark_df, current_metrics, 'pyspark')
+
+# 2. View report
+print_audit_report(audit_results)
+
+# 3. Check specific column
+recommendations = get_recommendations_for_column('customer_id', audit_results)
+print(recommendations)
