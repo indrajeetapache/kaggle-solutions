@@ -1,374 +1,506 @@
-from pyspark.sql import DataFrame as SparkDataFrame
-from pyspark.sql.functions import col, approx_count_distinct, count, stddev, mean, min, max
-from typing import Dict, List, Tuple
 import pandas as pd
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from sklearn.preprocessing import StandardScaler
+from itertools import product
 
-# Configuration
-CATEGORICAL_THRESHOLD = 20
-UNIQUE_RATIO_THRESHOLD = 0.95
-MODE_DOMINANCE_THRESHOLD = 0.5
-
-PROFILING_METRICS = [
-    'correlation', 'completeness', 'uniqueness', 'minimum', 'mean', 'maximum',
-    'entropy', 'approx_quantiles', 'max_length', 'size', 'min_length', 'sum',
-    'unique_value_ratio', 'count_distinct', 'distinctness', 'standard_deviation',
-    'negative_count', 'histogram', 'data_type', 'zero_count', 'missing_count'
-]
-
-COLUMN_TYPE_RULES = {
-    'identifier': {
-        'appropriate': ['size', 'completeness', 'missing_count', 'data_type', 
-                       'uniqueness', 'unique_value_ratio', 'count_distinct', 
-                       'distinctness', 'minimum', 'maximum'],
-        'inappropriate': ['mean', 'standard_deviation', 'sum', 'approx_quantiles',
-                         'correlation', 'negative_count', 'zero_count', 'entropy']
-    },
-    'categorical': {
-        'appropriate': ['size', 'completeness', 'missing_count', 'data_type',
-                       'uniqueness', 'count_distinct', 'histogram', 'entropy',
-                       'max_length', 'min_length'],
-        'inappropriate': ['mean', 'standard_deviation', 'sum', 'approx_quantiles',
-                         'correlation', 'negative_count', 'zero_count']
-    },
-    'continuous': {
-        'appropriate': ['size', 'completeness', 'missing_count', 'data_type',
-                       'mean', 'standard_deviation', 'minimum', 'maximum',
-                       'approx_quantiles', 'sum', 'histogram', 'negative_count',
-                       'zero_count', 'correlation'],
-        'inappropriate': ['max_length', 'min_length', 'entropy']
-    },
-    'constant': {
-        'appropriate': ['size', 'completeness', 'missing_count', 'data_type'],
-        'inappropriate': ['mean', 'standard_deviation', 'sum', 'approx_quantiles',
-                         'correlation', 'histogram', 'entropy', 'uniqueness',
-                         'negative_count', 'zero_count']
-    }
-}
-
-def analyze_spark_dataframe(df: SparkDataFrame, sample_size: int = 100000) -> Dict:
+class LSTMAutoencoder(nn.Module):
     """
-    Analyze Spark DataFrame column characteristics efficiently
+    LSTM-based Autoencoder for time series anomaly detection.
+
+    Architecture:
+    - Encoder: Compresses input sequences into latent representation
+    - Decoder: Reconstructs original sequences from latent space
+
+    Time Series Properties Handled:
+    - Temporal dependencies: LSTM captures sequential patterns
+    - Autocorrelation: Sequential nature preserves correlation structure
+    - Seasonality: Model learns recurring patterns without explicit deseasonalization
+    - Stationarity: NOT enforced - model learns from raw non-stationary data
     """
-    row_count = df.count()
-    
-    # Sample if needed
-    if row_count > sample_size:
-        df_sample = df.sample(fraction=sample_size/row_count, seed=42)
-        sample_row_count = df_sample.count()
-    else:
-        df_sample = df
-        sample_row_count = row_count
-    
-    # Build aggregation expressions
-    agg_exprs = []
-    numeric_cols = []
-    
-    for col_name in df.columns:
-        agg_exprs.extend([
-            approx_count_distinct(col(col_name)).alias(f"{col_name}_unique"),
-            count(col(col_name)).alias(f"{col_name}_non_null")
-        ])
-        
-        # Check if numeric column
-        col_type = str(df.schema[col_name].dataType)
-        if col_type in ['IntegerType', 'LongType', 'FloatType', 'DoubleType']:
-            numeric_cols.append(col_name)
-            agg_exprs.extend([
-                mean(col(col_name)).alias(f"{col_name}_mean"),
-                stddev(col(col_name)).alias(f"{col_name}_stddev"),
-                min(col(col_name)).alias(f"{col_name}_min"),
-                max(col(col_name)).alias(f"{col_name}_max")
-            ])
-    
-    # Execute aggregation
-    agg_result = df_sample.agg(*agg_exprs).collect()[0].asDict()
-    
-    # Process results
-    results = {}
-    for col_name in df.columns:
-        unique_count = agg_result[f"{col_name}_unique"]
-        non_null_count = agg_result[f"{col_name}_non_null"]
-        
-        col_stats = {
-            'unique_count': unique_count,
-            'unique_ratio': unique_count / sample_row_count if sample_row_count > 0 else 0,
-            'null_ratio': (sample_row_count - non_null_count) / sample_row_count if sample_row_count > 0 else 0,
-            'row_count': sample_row_count,
-            'is_numeric': col_name in numeric_cols
-        }
-        
-        # Add numeric stats if available
-        if col_name in numeric_cols:
-            col_stats['numeric_stats'] = {
-                'mean': agg_result.get(f"{col_name}_mean"),
-                'stddev': agg_result.get(f"{col_name}_stddev"),
-                'min_val': agg_result.get(f"{col_name}_min"),
-                'max_val': agg_result.get(f"{col_name}_max")
-            }
-        
-        # Get mode (separate query for performance)
-        mode_info = df_sample.groupBy(col_name).count().orderBy(col("count").desc()).limit(1).collect()
-        if mode_info:
-            col_stats['mode_frequency'] = mode_info[0]['count']
-            col_stats['mode_ratio'] = mode_info[0]['count'] / sample_row_count
+    def __init__(self, n_features, seq_length, hidden_size=64, dropout=0.2):
+        super().__init__()
+        self.seq_length = seq_length
+        self.n_features = n_features
+
+        print(f"Initializing LSTM Autoencoder:")
+        print(f"  - Input features: {n_features}")
+        print(f"  - Sequence length: {seq_length}")
+        print(f"  - Hidden size: {hidden_size}")
+        print(f"  - Dropout rate: {dropout}")
+
+        # Encoder: Compress temporal sequences
+        self.encoder_lstm1 = nn.LSTM(n_features, hidden_size, batch_first=True, dropout=dropout)
+        self.encoder_lstm2 = nn.LSTM(hidden_size, hidden_size//2, batch_first=True, dropout=dropout)
+
+        # Decoder: Reconstruct from compressed representation
+        self.decoder_lstm1 = nn.LSTM(hidden_size//2, hidden_size, batch_first=True, dropout=dropout)
+        self.decoder_lstm2 = nn.LSTM(hidden_size, n_features, batch_first=True, dropout=dropout)
+
+    def forward(self, x):
+        """
+        Forward pass: Encode then decode input sequences
+        Purpose: Learn to reconstruct normal patterns; fail on anomalies
+        """
+        # Encoder: Extract temporal features and compress
+        encoded, _ = self.encoder_lstm1(x)  # First LSTM layer
+        encoded, (hidden, cell) = self.encoder_lstm2(encoded)  # Compression layer
+
+        # Bridge: Use final hidden state as compressed representation
+        # Repeat for sequence length to enable reconstruction
+        repeated = hidden[-1].unsqueeze(1).repeat(1, self.seq_length, 1)
+
+        # Decoder: Reconstruct original sequence from compressed state
+        decoded, _ = self.decoder_lstm1(repeated)  # Expand from compressed state
+        decoded, _ = self.decoder_lstm2(decoded)  # Reconstruct to original dimensions
+
+        return decoded
+
+class TimeSeriesDataset(Dataset):
+    """PyTorch Dataset wrapper for time series sequences"""
+    def __init__(self, sequences):
+        self.sequences = sequences
+        print(f"Created dataset with {len(sequences)} sequences")
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, idx):
+        return torch.FloatTensor(self.sequences[idx])
+
+class LSTMAnomalyDetector:
+    """
+    LSTM Autoencoder for unsupervised anomaly detection in time series.
+
+    Core Principle: Train on normal data to learn typical patterns.
+    Anomalies produce higher reconstruction errors than normal data.
+
+    Time Series Handling:
+    - NO stationarity assumptions: Works with trending/seasonal data
+    - Preserves autocorrelation: Sequential modeling maintains correlation structure
+    - Learns seasonality: Recurring patterns captured without explicit deseasonalization
+    - Handles multivariate: Multiple features processed simultaneously
+    """
+
+    def __init__(self, seq_length=30, hidden_size=64, dropout=0.2, lr=0.001, exclude_cols=None, max_grad_norm=1.0):
+        """
+        Initialize detector with hyperparameters
+
+        Args:
+            seq_length: Window size for temporal patterns (captures seasonality horizon)
+            hidden_size: LSTM hidden dimensions (model capacity)
+            dropout: Regularization to prevent overfitting
+            lr: Learning rate for optimization
+            exclude_cols: List of column names to exclude from training and prediction
+            max_grad_norm: Maximum gradient norm for clipping (prevents explosion)
+        """
+        self.seq_length = seq_length
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.lr = lr
+        self.exclude_cols = exclude_cols or []
+        self.max_grad_norm = max_grad_norm
+        self.model = None
+        self.scaler = StandardScaler()  # Handles different feature scales
+        self.threshold = None
+        self.device = torch.device('cpu')
+        self.best_model_state = None  # FIXED: Store best model state in memory
+        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        print(f"LSTMAnomalyDetector initialized:")
+        print(f"  - Device: {self.device}")
+        print(f"  - Sequence length: {seq_length} (temporal window)")
+        print(f"  - Hidden size: {hidden_size}")
+        print(f"  - Learning rate: {lr}")
+        print(f"  - Gradient clipping: {max_grad_norm} (prevents explosion)")
+        if self.exclude_cols:
+            print(f"  - Excluded columns: {self.exclude_cols}")
+
+    def _filter_columns(self, data):
+        """Filter out excluded columns from the dataset"""
+        if isinstance(data, pd.DataFrame):
+            numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+            cols_to_use = [col for col in numeric_cols if col not in self.exclude_cols]
+            if self.exclude_cols:
+                excluded_found = [col for col in self.exclude_cols if col in numeric_cols]
+                if excluded_found:
+                    print(f"Excluding columns from training: {excluded_found}")
+                not_found = [col for col in self.exclude_cols if col not in numeric_cols]
+                if not_found:
+                    print(f"Warning: Excluded columns not found in data: {not_found}")
+            return data[cols_to_use]
         else:
-            col_stats['mode_frequency'] = 0
-            col_stats['mode_ratio'] = 0
-        
-        results[col_name] = col_stats
-    
-    return results
+            return data
 
-def analyze_pandas_dataframe(df: pd.DataFrame) -> Dict:
-    """
-    Analyze Pandas DataFrame column characteristics
-    """
-    results = {}
-    row_count = len(df)
-    
-    for col_name in df.columns:
-        col_data = df[col_name]
-        unique_count = col_data.nunique()
-        null_count = col_data.isnull().sum()
-        
-        col_stats = {
-            'unique_count': unique_count,
-            'unique_ratio': unique_count / row_count if row_count > 0 else 0,
-            'null_ratio': null_count / row_count if row_count > 0 else 0,
-            'row_count': row_count,
-            'is_numeric': pd.api.types.is_numeric_dtype(col_data)
-        }
-        
-        # Mode analysis
-        if not col_data.empty:
-            mode_series = col_data.value_counts()
-            if len(mode_series) > 0:
-                col_stats['mode_frequency'] = mode_series.iloc[0]
-                col_stats['mode_ratio'] = mode_series.iloc[0] / row_count
+    def _create_sequences(self, data):
+        """
+        Create sliding window sequences from time series data
+
+        Purpose: Convert time series into supervised learning format
+        - Maintains temporal order (preserves autocorrelation)
+        - Creates overlapping windows (captures all patterns)
+        """
+        sequences = []
+        for i in range(len(data) - self.seq_length + 1):
+            sequences.append(data[i:(i + self.seq_length)])
+
+        print(f"Created {len(sequences)} sequences from {len(data)} data points")
+        return np.array(sequences)
+
+    def hyperparameter_search(self, X_train, param_grid, epochs=50):
+        """
+        Grid search for optimal hyperparameters
+
+        Purpose: Find best configuration for your specific data patterns
+        Returns best parameters based on validation reconstruction error
+        """
+        print("Starting hyperparameter search...")
+        print(f"Parameter grid: {param_grid}")
+
+        best_params = None
+        best_score = float('inf')
+        results = []
+
+        # Generate all parameter combinations
+        param_names = list(param_grid.keys())
+        param_values = list(param_grid.values())
+
+        for params in product(*param_values):
+            param_dict = dict(zip(param_names, params))
+            print(f"\nTesting parameters: {param_dict}")
+
+            # Create temporary detector with current parameters
+            temp_detector = LSTMAnomalyDetector(exclude_cols=self.exclude_cols, **param_dict)
+
+            try:
+                # Quick training for evaluation
+                temp_detector.fit(X_train, epochs=epochs, validation_split=0.3, verbose=False)
+
+                # Evaluate on validation data
+                X_filtered = temp_detector._filter_columns(X_train)
+                X_scaled = temp_detector.scaler.transform(X_filtered)
+                sequences = temp_detector._create_sequences(X_scaled)
+
+                # Use subset for quick evaluation
+                val_size = min(100, len(sequences) // 3)
+                val_sequences = sequences[-val_size:]
+
+                temp_detector.model.eval()
+                with torch.no_grad():
+                    val_tensor = torch.FloatTensor(val_sequences).to(temp_detector.device)
+                    output = temp_detector.model(val_tensor)
+                    val_loss = torch.mean((val_tensor - output) ** 2).item()
+
+                results.append({**param_dict, 'val_loss': val_loss})
+                print(f"Validation loss: {val_loss:.6f}")
+
+                if val_loss < best_score:
+                    best_score = val_loss
+                    best_params = param_dict
+                    print(f"New best parameters found!")
+
+            except Exception as e:
+                print(f"Error with parameters {param_dict}: {e}")
+                continue
+
+        print(f"\nHyperparameter search complete!")
+        print(f"Best parameters: {best_params}")
+        print(f"Best validation loss: {best_score:.6f}")
+
+        # Update current detector with best parameters
+        for key, value in best_params.items():
+            setattr(self, key, value)
+
+        return best_params, results
+
+    def fit(self, X_train, epochs=100, batch_size=32, validation_split=0.2, verbose=True):
+        """
+        Train autoencoder on NORMAL data only (unsupervised learning)
+
+        Purpose: Learn patterns of normal behavior
+        - No target variable needed (autoencoder: input = target)
+        - Learns to reconstruct typical patterns with low error
+        - Will struggle to reconstruct anomalous patterns (high error)
+
+        Time Series Considerations:
+        - Preserves temporal order in sequences
+        - StandardScaler handles different feature magnitudes
+        - No detrending/deseasonalization (model learns these patterns)
+        """
+        print(f"\nTraining on {len(X_train)} normal data points...")
+        print("Note: Training on NORMAL data only - no anomalies should be included")
+
+        # Filter out excluded columns
+        X_filtered = self._filter_columns(X_train)
+        print(f"Using {X_filtered.shape[1]} features after excluding {len(self.exclude_cols)} columns")
+
+        # Scale features (important for LSTM convergence)
+        print("Scaling features...")
+        X_scaled = self.scaler.fit_transform(X_filtered)
+        print(f"Feature scaling completed. Mean ~0, Std ~1 for all features")
+
+        # Create temporal sequences (sliding windows)
+        print("Creating temporal sequences...")
+        sequences = self._create_sequences(X_scaled)
+        print(f"Sequence shape: {sequences.shape} [samples, time_steps, features]")
+
+        # Split train/validation while preserving temporal order
+        val_size = int(len(sequences) * validation_split)
+        train_seq = sequences[:-val_size] if val_size > 0 else sequences
+        val_seq = sequences[-val_size:] if val_size > 0 else sequences[:50]
+
+        print(f"Training sequences: {len(train_seq)}")
+        print(f"Validation sequences: {len(val_seq)}")
+
+        # Create datasets and dataloaders
+        train_dataset = TimeSeriesDataset(train_seq)
+        val_dataset = TimeSeriesDataset(val_seq)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size)
+
+        # Initialize model
+        print("Building LSTM Autoencoder model...")
+        self.model = LSTMAutoencoder(
+            X_filtered.shape[1], self.seq_length, self.hidden_size, self.dropout
+        ).to(self.device)
+
+        total_params = sum(p.numel() for p in self.model.parameters())
+        print(f"Model has {total_params:,} trainable parameters")
+
+        criterion = nn.MSELoss()  # Mean Squared Error for reconstruction
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
+
+        # Training loop with early stopping
+        print(f"\nStarting training for up to {epochs} epochs...")
+        best_val_loss = float('inf')
+        patience_counter = 0
+
+        for epoch in range(epochs):
+            # Training phase
+            self.model.train()
+            train_loss = 0
+            batch_count = 0
+
+            for batch in train_loader:
+                batch = batch.to(self.device)
+                optimizer.zero_grad()
+
+                # Forward pass: input = target for autoencoder
+                output = self.model(batch)
+                loss = criterion(output, batch)  # Reconstruction error
+
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+                batch_count += 1
+
+            # Validation phase
+            self.model.eval()
+            val_loss = 0
+            val_batch_count = 0
+
+            with torch.no_grad():
+                for batch in val_loader:
+                    batch = batch.to(self.device)
+                    output = self.model(batch)
+                    val_loss += criterion(output, batch).item()
+                    val_batch_count += 1
+
+            # Calculate average losses
+            train_loss /= batch_count
+            val_loss /= val_batch_count
+            scheduler.step(val_loss)
+
+            # Print progress
+            if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
+                current_lr = optimizer.param_groups[0]['lr']
+                print(f'Epoch {epoch:3d}: Train Loss: {train_loss:.6f}, '
+                      f'Val Loss: {val_loss:.6f}, LR: {current_lr:.6f}')
+
+            # FIXED: Early stopping - store state in memory instead of disk
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+                # Store state dict in memory (not disk)
+                self.best_model_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
             else:
-                col_stats['mode_frequency'] = 0
-                col_stats['mode_ratio'] = 0
-        
-        # Numeric statistics
-        if pd.api.types.is_numeric_dtype(col_data):
-            col_stats['numeric_stats'] = {
-                'mean': col_data.mean(),
-                'stddev': col_data.std(),
-                'min_val': col_data.min(),
-                'max_val': col_data.max()
-            }
-        
-        results[col_name] = col_stats
-    
-    return results
+                patience_counter += 1
+                if patience_counter >= 10:
+                    print(f'Early stopping at epoch {epoch} (patience exceeded)')
+                    break
 
-def classify_column_type(col_stats: Dict) -> Tuple[str, float, str]:
-    """
-    Classify column type based on statistics
-    Returns: (column_type, confidence, reasoning)
-    """
-    # Check constant
-    if col_stats['unique_count'] <= 1:
-        return 'constant', 1.0, f"Only {col_stats['unique_count']} unique value(s)"
-    
-    # Check identifier
-    if col_stats['unique_ratio'] > UNIQUE_RATIO_THRESHOLD:
-        return 'identifier', col_stats['unique_ratio'], f"High uniqueness ratio: {col_stats['unique_ratio']:.3f}"
-    
-    # Check categorical by cardinality
-    if col_stats['unique_count'] <= CATEGORICAL_THRESHOLD:
-        confidence = 1.0 - (col_stats['unique_count'] / CATEGORICAL_THRESHOLD)
-        return 'categorical', confidence, f"Low cardinality: {col_stats['unique_count']} unique values"
-    
-    # Check categorical by mode dominance
-    if col_stats.get('mode_ratio', 0) > MODE_DOMINANCE_THRESHOLD:
-        return 'categorical', col_stats['mode_ratio'], f"Mode dominance: {col_stats['mode_ratio']:.3f}"
-    
-    # Check continuous
-    if col_stats.get('is_numeric') and col_stats.get('numeric_stats'):
-        stddev = col_stats['numeric_stats'].get('stddev', 0)
-        if stddev and stddev > 0:
-            return 'continuous', 0.8, f"Numeric with variation (std: {stddev:.3f})"
-    
-    return 'categorical', 0.5, "Mixed or unclear pattern"
+        # FIXED: Load best model weights from memory instead of disk
+        if self.best_model_state is not None:
+            self.model.load_state_dict(self.best_model_state)
+            print(f"Loaded best model with validation loss: {best_val_loss:.6f}")
 
-def validate_metrics_for_column(col_stats: Dict) -> Dict:
-    """
-    Validate which metrics are appropriate for this column
-    """
-    column_type, confidence, reasoning = classify_column_type(col_stats)
-    
-    if column_type not in COLUMN_TYPE_RULES:
-        return {
-            'column_type': column_type,
-            'confidence': confidence,
-            'reasoning': reasoning,
-            'appropriate_metrics': ['size', 'completeness', 'missing_count'],
-            'inappropriate_metrics': [],
-            'questionable_metrics': PROFILING_METRICS
-        }
-    
-    rules = COLUMN_TYPE_RULES[column_type]
-    appropriate = rules['appropriate']
-    inappropriate = rules['inappropriate']
-    
-    questionable = [m for m in PROFILING_METRICS 
-                   if m not in appropriate and m not in inappropriate]
-    
-    return {
-        'column_type': column_type,
-        'confidence': confidence,
-        'reasoning': reasoning,
-        'appropriate_metrics': appropriate,
-        'inappropriate_metrics': inappropriate,
-        'questionable_metrics': questionable
-    }
+        # Set anomaly threshold using validation reconstruction errors
+        print("\nCalculating anomaly threshold...")
+        self.model.eval()
+        val_errors = []
 
-def audit_profiling_setup(df, current_applied_metrics: Dict[str, List[str]] = None, 
-                         backend: str = 'pyspark') -> Dict:
-    """
-    Complete audit of profiling setup
-    
-    Args:
-        df: DataFrame (PySpark or Pandas)
-        current_applied_metrics: Dict of {column_name: [list_of_applied_metrics]}
-        backend: 'pyspark' or 'pandas'
-    
-    Returns:
-        Complete audit report
-    """
-    print("Analyzing column characteristics...")
-    
-    if backend == 'pyspark':
-        col_analysis = analyze_spark_dataframe(df)
-    else:
-        col_analysis = analyze_pandas_dataframe(df)
-    
-    print("Validating metric appropriateness...")
-    validation_results = {}
-    
-    for col_name, col_stats in col_analysis.items():
-        validation = validate_metrics_for_column(col_stats)
-        validation_results[col_name] = validation
-    
-    # Calculate mismatches if current metrics provided
-    mismatches = {}
-    if current_applied_metrics:
-        for col_name, validation in validation_results.items():
-            if col_name in current_applied_metrics:
-                applied = set(current_applied_metrics[col_name])
-                inappropriate = set(validation['inappropriate_metrics'])
-                unnecessary = applied.intersection(inappropriate)
-                
-                if unnecessary:
-                    mismatches[col_name] = {
-                        'column_type': validation['column_type'],
-                        'confidence': validation['confidence'],
-                        'unnecessary_metrics': list(unnecessary),
-                        'reasoning': validation['reasoning']
-                    }
-    
-    # Generate summary
-    summary = {
-        'total_columns': len(validation_results),
-        'columns_by_type': {},
-        'total_mismatches': len(mismatches)
-    }
-    
-    for validation in validation_results.values():
-        col_type = validation['column_type']
-        summary['columns_by_type'][col_type] = summary['columns_by_type'].get(col_type, 0) + 1
-    
-    return {
-        'validations': validation_results,
-        'mismatches': mismatches,
-        'summary': summary
-    }
+        with torch.no_grad():
+            for batch in val_loader:
+                batch = batch.to(self.device)
+                output = self.model(batch)
+                # Calculate per-sequence reconstruction error
+                mse = torch.mean((batch - output) ** 2, dim=(1, 2))
+                val_errors.extend(mse.cpu().numpy())
 
-def print_audit_report(audit_results: Dict):
-    """
-    Print human-readable audit report
-    """
-    summary = audit_results['summary']
-    validations = audit_results['validations']
-    mismatches = audit_results['mismatches']
-    
-    print("\n" + "="*50)
-    print("PROFILING METRICS VALIDATION REPORT")
-    print("="*50)
-    
-    print(f"Total columns analyzed: {summary['total_columns']}")
-    print(f"Column type distribution:")
-    for col_type, count in summary['columns_by_type'].items():
-        print(f"  {col_type}: {count} columns")
-    
-    if summary['total_mismatches'] > 0:
-        print(f"\nProblematic applications: {summary['total_mismatches']}")
-        print("\nCOLUMNS WITH INAPPROPRIATE METRICS:")
-        print("-" * 50)
-        
-        for col_name, mismatch in mismatches.items():
-            print(f"\n{col_name} ({mismatch['column_type']}) - confidence: {mismatch['confidence']:.2f}")
-            print(f"  Reason: {mismatch['reasoning']}")
-            print(f"  Remove: {mismatch['unnecessary_metrics']}")
-    else:
-        print("\nNo inappropriate metric applications found!")
+        # Set threshold at 95th percentile of validation errors
+        self.threshold = np.percentile(val_errors, 95)
+        print(f"Anomaly threshold set at 95th percentile: {self.threshold:.6f}")
+        print("Sequences with reconstruction error > threshold will be flagged as anomalies")
 
-def get_recommendations_for_column(col_name: str, audit_results: Dict) -> Dict:
-    """
-    Get specific recommendations for a single column
-    """
-    if col_name not in audit_results['validations']:
-        return {'error': f'Column {col_name} not found'}
-    
-    validation = audit_results['validations'][col_name]
-    return {
-        'column_type': validation['column_type'],
-        'confidence': validation['confidence'],
-        'reasoning': validation['reasoning'],
-        'should_use': validation['appropriate_metrics'],
-        'should_not_use': validation['inappropriate_metrics'],
-        'review_needed': validation['questionable_metrics']
-    }
+        # Print threshold statistics
+        mean_error = np.mean(val_errors)
+        std_error = np.std(val_errors)
+        print(f"Validation error statistics:")
+        print(f"  - Mean: {mean_error:.6f}")
+        print(f"  - Std: {std_error:.6f}")
+        print(f"  - 95th percentile (threshold): {self.threshold:.6f}")
 
-# Example usage function
-def example_usage():
-    """
-    Example of how to use the functions
-    """
-    # Your current metrics setup
-    current_metrics = {
-        'customer_id': ['mean', 'standard_deviation', 'correlation', 'sum'],
-        'age': ['mean', 'standard_deviation', 'approx_quantiles'],
-        'status_code': ['mean', 'standard_deviation'],
-        'transaction_amount': ['mean', 'standard_deviation', 'approx_quantiles']
-    }
-    
-    # Usage steps:
-    print("Usage:")
-    print("1. audit_results = audit_profiling_setup(your_df, current_metrics, 'pyspark')")
-    print("2. print_audit_report(audit_results)")
-    print("3. recommendations = get_recommendations_for_column('column_name', audit_results)")
-    
-    return current_metrics
+        return self
 
-if __name__ == "__main__":
-    example_usage()
+    def predict(self, X_test, date_col=None, batch_size=32, return_feature_errors=False):
+        """
+        Detect anomalies in test data with optional per-feature error analysis
 
+        Purpose: Identify sequences with high reconstruction error
+        - High error = pattern doesn't match learned normal behavior
+        - Returns anomaly flags and confidence scores
+        - Optional: Per-feature errors for interpretability
 
+        Output:
+        - reconstruction_error: MSE between input and reconstructed sequence
+        - is_anomaly: Binary flag (error > threshold)
+        - anomaly_score: Normalized score (error / threshold)
+        - feature_errors: Per-feature reconstruction errors (if requested)
 
-# 1. Run audit
-current_metrics = {
-    'customer_id': ['mean', 'standard_deviation', 'sum'],
-    'age': ['mean', 'standard_deviation', 'approx_quantiles'],
-    'status': ['mean', 'histogram']
-}
+        Value of Per-Feature Errors:
+        - **Root Cause Analysis**: Know which metrics are anomalous (CPU, memory, disk I/O)
+        - **Targeted Investigation**: Focus on specific problematic profiling metrics
+        - **Feature Importance**: Understand which features drive the anomaly decision
+        """
+        print(f"\nDetecting anomalies in {len(X_test)} test samples...")
 
-audit_results = audit_profiling_setup(spark_df, current_metrics, 'pyspark')
+        # Filter out excluded columns (same as training)
+        X_filtered = self._filter_columns(X_test)
 
-# 2. View report
-print_audit_report(audit_results)
+        # Scale test data using training statistics (important!)
+        print("Scaling test data using training statistics...")
+        X_scaled = self.scaler.transform(X_filtered)
+        feature_names = X_filtered.columns.tolist()
 
-# 3. Check specific column
-recommendations = get_recommendations_for_column('customer_id', audit_results)
-print(recommendations)
+        # Create sequences
+        print("Creating test sequences...")
+        sequences = self._create_sequences(X_scaled)
+        test_dataset = TimeSeriesDataset(sequences)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+        # Calculate reconstruction errors (both overall and per-feature)
+        print("Computing reconstruction errors...")
+        if return_feature_errors:
+            print("  - Including per-feature error analysis for interpretability")
+
+        self.model.eval()
+        errors = []
+        all_feature_errors = []
+        processed_batches = 0
+
+        with torch.no_grad():
+            for batch in test_loader:
+                batch = batch.to(self.device)
+                output = self.model(batch)
+
+                # Overall per-sequence MSE (reconstruction error)
+                mse = torch.mean((batch - output) ** 2, dim=(1, 2))
+                errors.extend(mse.cpu().numpy())
+
+                # Per-feature reconstruction errors for interpretability
+                # Shape: [batch_size, n_features] - average error across time steps per feature
+                if return_feature_errors:
+                    feature_errors = torch.mean((batch - output) ** 2, dim=1)  # [batch, features]
+                    all_feature_errors.extend(feature_errors.cpu().numpy())
+
+                processed_batches += 1
+
+        errors = np.array(errors)
+        print(f"Processed {processed_batches} batches, {len(errors)} sequences")
+
+        # Apply threshold to identify anomalies
+        anomaly_flags = errors > self.threshold
+        anomaly_scores = errors / self.threshold  # Normalized confidence
+
+        print(f"Anomaly detection results:")
+        print(f"  - Total sequences: {len(errors)}")
+        print(f"  - Anomalies detected: {np.sum(anomaly_flags)}")
+        print(f"  - Anomaly rate: {np.mean(anomaly_flags)*100:.2f}%")
+        print(f"  - Error range: [{np.min(errors):.6f}, {np.max(errors):.6f}]")
+
+        # Create results DataFrame
+        # Note: seq_length-1 rows lost due to sequence windowing
+        start_idx = self.seq_length - 1
+        results = pd.DataFrame({
+            'reconstruction_error': errors,
+            'is_anomaly': anomaly_flags,
+            'anomaly_score': anomaly_scores
+        })
+
+        # Add per-feature errors for interpretability
+        if return_feature_errors:
+            all_feature_errors = np.array(all_feature_errors)
+            print(f"Added per-feature error analysis for {len(feature_names)} features")
+
+            # Add each feature's error as a separate column
+            for i, feature_name in enumerate(feature_names):
+                results[f'{feature_name}_error'] = all_feature_errors[:, i]
+
+            # Identify top contributing features for each anomaly
+            if np.any(anomaly_flags):
+                print("Analyzing which features contribute most to anomalies...")
+                anomaly_indices = np.where(anomaly_flags)[0]
+
+                # Calculate mean feature errors for anomalous vs normal sequences
+                normal_feature_errors = all_feature_errors[~anomaly_flags].mean(axis=0)
+                anomaly_feature_errors = all_feature_errors[anomaly_flags].mean(axis=0)
+
+                # Feature contribution ranking (anomaly error / normal error ratio)
+                feature_contributions = anomaly_feature_errors / (normal_feature_errors + 1e-8)
+                feature_ranking = sorted(zip(feature_names, feature_contributions),
+                                       key=lambda x: x[1], reverse=True)
+
+                print(f"\nTop features contributing to anomalies:")
+                for i, (feature, contrib) in enumerate(feature_ranking[:5]):
+                    print(f"  {i+1}. {feature}: {contrib:.2f}x higher error than normal")
+
+        # Add date column if provided
+        if date_col and date_col in X_test.columns:
+            available_dates = X_test[date_col].iloc[start_idx:start_idx + len(errors)]
+            results[date_col] = available_dates.reset_index(drop=True)
+            print(f"Added date column: {date_col}")
+
+        # Print top anomalies with feature breakdown
+        if np.any(anomaly_flags):
+            top_anomalies = results[results['is_anomaly']].nlargest(5, 'reconstruction_error')
+            print(f"\nTop 5 anomalies:")
+
+            for idx, row in top_anomalies.iterrows():
+                date_str = f" on {row[date_col]}" if date_col in results.columns else ""
+                print(f"  - Overall Error: {row['reconstruction_error']:.6f}, "
+                      f"Score: {row['anomaly_score']:.2f}{date_str}")
+
+                # Show which features had highest errors for this anomaly
+                if return_feature_errors:
+                    feature_errors_this_row = [(fname, row[f'{fname}_error'])
+                                             for fname in feature_names]
+                    top_features = sorted(feature_errors_this_row, key=lambda x: x[1], reverse=True)[:3]
+
+                    print(f"    Top contributing features:")
+                    for feat_name, feat_error in top_features:
+                        print(f"      - {feat_name}: {feat_error:.6f}")
+
+        return results
