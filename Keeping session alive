@@ -117,20 +117,84 @@ class LSTMAnomalyDetector:
         print(f"  - Gradient clipping: {max_grad_norm} (prevents explosion)")
         if self.exclude_cols:
             print(f"  - Excluded columns: {self.exclude_cols}")
-
-    def _filter_columns(self, data):
-        """Filter out excluded columns from the dataset"""
+    def _validate_input_data(self, data, stage="training"):
+        """
+        Validate data quality before processing
+        
+        Checks for:
+        - NaN values in rows (must be handled by user)
+        - Infinite values (mathematical errors)
+        """
+        numeric_data = data.select_dtypes(include=[np.number])
+        
+        # Check for NaN in rows - REJECT (user must handle)
+        nan_cols = numeric_data.columns[numeric_data.isnull().any()].tolist()
+        if nan_cols:
+            nan_counts = numeric_data[nan_cols].isnull().sum().to_dict()
+            raise ValueError(
+                f"NaN values detected in {len(nan_cols)} columns during {stage}:\n"
+                f"{nan_counts}\n"
+                f"handle missing values before passing data to the model.\n" #Options: df.fillna(), df.dropna(), or df.interpolate()
+                
+            )
+        
+        # Check for infinite values - REJECT
+        inf_mask = np.isinf(numeric_data.values)
+        if inf_mask.any():
+            inf_cols = numeric_data.columns[np.isinf(numeric_data).any()].tolist()
+            raise ValueError(
+                f"Infinite values detected in columns during {stage}: {inf_cols}\n"
+                f"Please handle infinite values before training."
+            )
+        
+        return True
+    
+    def _filter_columns(self, data, is_training=True):
+        """
+        Filter columns: remove exclusions, all-NaN columns, and constant features
+        
+        Args:
+            data: Input DataFrame
+            is_training: If True, remove constant features. If False, use stored feature names.
+        """
         if isinstance(data, pd.DataFrame):
+            self._validate_input_data(data, stage="training" if is_training else "prediction")
+            # Get numeric columns
             numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            # Apply user exclusions
             cols_to_use = [col for col in numeric_cols if col not in self.exclude_cols]
-            if self.exclude_cols:
-                excluded_found = [col for col in self.exclude_cols if col in numeric_cols]
-                if excluded_found:
-                    print(f"Excluding columns from training: {excluded_found}")
-                not_found = [col for col in self.exclude_cols if col not in numeric_cols]
-                if not_found:
-                    print(f"Warning: Excluded columns not found in data: {not_found}")
-            return data[cols_to_use]
+            X_subset = data[cols_to_use]
+            
+            # Remove all-NaN columns (edge case)
+            X_subset = X_subset.dropna(axis=1, how='all')
+            
+            # Remove constant features (zero variance causes StandardScaler to fail)
+            if is_training:
+                n_unique = X_subset.nunique()
+                non_constant_mask = n_unique > 1
+                constant_cols = X_subset.columns[~non_constant_mask].tolist()
+                
+                if constant_cols:
+                    print(f"Removed {len(constant_cols)} constant features (zero variance):")
+                    for col in constant_cols[:5]:  # Show first 5
+                        print(f"  - {col}")
+                    if len(constant_cols) > 5:
+                        print(f"  ... and {len(constant_cols) - 5} more")
+                
+                X_subset = X_subset.loc[:, non_constant_mask]
+                self.feature_names_ = X_subset.columns.tolist()  # Store for predict()
+            else:
+                # During prediction, use same features as training
+                if hasattr(self, 'feature_names_'):
+                    missing_features = set(self.feature_names_) - set(X_subset.columns)
+                    if missing_features:
+                        raise ValueError(
+                            f"Features missing in test data that were present in training: {missing_features}"
+                        )
+                    X_subset = X_subset[self.feature_names_]
+            
+            return X_subset
         else:
             return data
 
@@ -179,7 +243,7 @@ class LSTMAnomalyDetector:
                 temp_detector.fit(X_train, epochs=epochs, validation_split=0.3, verbose=False)
 
                 # Evaluate on validation data
-                X_filtered = temp_detector._filter_columns(X_train)
+                X_filtered = temp_detector._filter_columns(X_train, is_training=True) #X_filtered = temp_detector._filter_columns(X_train)
                 X_scaled = temp_detector.scaler.transform(X_filtered)
                 sequences = temp_detector._create_sequences(X_scaled)
 
@@ -233,12 +297,24 @@ class LSTMAnomalyDetector:
         print("Note: Training on NORMAL data only - no anomalies should be included")
 
         # Filter out excluded columns
-        X_filtered = self._filter_columns(X_train)
+        # X_filtered = self._filter_columns(X_train)
+        X_filtered = self._filter_columns(X_train, is_training=True)
         print(f"Using {X_filtered.shape[1]} features after excluding {len(self.exclude_cols)} columns")
 
         # Scale features (important for LSTM convergence)
         print("Scaling features...")
+        # X_scaled = self.scaler.fit_transform(X_filtered)
+        # print(f"Feature scaling completed. Mean ~0, Std ~1 for all features")
         X_scaled = self.scaler.fit_transform(X_filtered)
+        
+        # CRITICAL: Validate no NaN created during scaling
+        if np.isnan(X_scaled).any():
+            raise ValueError(
+                "NaN values created during scaling. This indicates:\n"
+                "1. Features with zero variance (all identical values)\n"
+                "2. Extreme outliers causing numerical instability \n"
+            )
+        
         print(f"Feature scaling completed. Mean ~0, Std ~1 for all features")
 
         # Create temporal sequences (sliding windows)
@@ -292,7 +368,15 @@ class LSTMAnomalyDetector:
                 output = self.model(batch)
                 loss = criterion(output, batch)  # Reconstruction error
 
+                # loss.backward()
+                # optimizer.step()
+                # train_loss += loss.item()
+                # batch_count += 1
                 loss.backward()
+                
+                # Gradient clipping to prevent explosion
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
+                
                 optimizer.step()
                 train_loss += loss.item()
                 batch_count += 1
@@ -351,6 +435,15 @@ class LSTMAnomalyDetector:
                 val_errors.extend(mse.cpu().numpy())
 
         # Set threshold at 95th percentile of validation errors
+        # Validate threshold calculation
+        val_errors = np.array(val_errors)
+        if len(val_errors) == 0 or np.isnan(val_errors).any():
+            raise ValueError(
+                "Cannot calculate anomaly threshold - validation errors contain NaN.\n"
+                "gradient clipping not working properly."
+            )
+        
+        # Set threshold at 95th percentile of validation errors
         self.threshold = np.percentile(val_errors, 95)
         print(f"Anomaly threshold set at 95th percentile: {self.threshold:.6f}")
         print("Sequences with reconstruction error > threshold will be flagged as anomalies")
@@ -388,7 +481,8 @@ class LSTMAnomalyDetector:
         print(f"\nDetecting anomalies in {len(X_test)} test samples...")
 
         # Filter out excluded columns (same as training)
-        X_filtered = self._filter_columns(X_test)
+        # X_filtered = self._filter_columns(X_test)
+        X_filtered = self._filter_columns(X_test, is_training=False)
 
         # Scale test data using training statistics (important!)
         print("Scaling test data using training statistics...")
