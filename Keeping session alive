@@ -550,8 +550,11 @@ class LSTMAnomalyDetector:
             print(f"Added per-feature error analysis for {len(feature_names)} features")
 
             # Add each feature's error as a separate column
-            for i, feature_name in enumerate(feature_names):
-                results[f'{feature_name}_error'] = all_feature_errors[:, i]
+            feature_error_df = pd.DataFrame(
+                all_feature_errors,
+                columns=[f'{name}_error' for name in feature_names]
+            )
+            results = pd.concat([results, feature_error_df], axis=1)
 
             # Identify top contributing features for each anomaly
             if np.any(anomaly_flags):
