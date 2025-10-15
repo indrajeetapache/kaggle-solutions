@@ -1,603 +1,536 @@
-import pandas as pd
+"""
+Production-Ready SHAP Explainability for LSTM Anomaly Detection
+
+Purpose: Generate interpretable explanations for anomalies detected by LSTM autoencoder
+Audience: Technical teams and executives
+Output: Global feature importance, local explanations, and executive summary
+"""
+
 import numpy as np
+import pandas as pd
+import shap
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+from datetime import datetime
 import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import StandardScaler
-from itertools import product
+import warnings
+warnings.filterwarnings('ignore')
 
-class LSTMAutoencoder(nn.Module):
+class SHAPAnomalyExplainer:
     """
-    LSTM-based Autoencoder for time series anomaly detection.
-
-    Architecture:
-    - Encoder: Compresses input sequences into latent representation
-    - Decoder: Reconstructs original sequences from latent space
-
-    Time Series Properties Handled:
-    - Temporal dependencies: LSTM captures sequential patterns
-    - Autocorrelation: Sequential nature preserves correlation structure
-    - Seasonality: Model learns recurring patterns without explicit deseasonalization
-    - Stationarity: NOT enforced - model learns from raw non-stationary data
+    SHAP-based explainability for LSTM autoencoder anomaly detection.
+    
+    Generates global feature importance and local explanations for anomalies.
+    Outputs production-ready reports with visualizations and CSV exports.
     """
-    def __init__(self, n_features, seq_length, hidden_size=64, dropout=0.2):
-        super().__init__()
-        self.seq_length = seq_length
-        self.n_features = n_features
-
-        print(f"Initializing LSTM Autoencoder:")
-        print(f"  - Input features: {n_features}")
-        print(f"  - Sequence length: {seq_length}")
-        print(f"  - Hidden size: {hidden_size}")
-        print(f"  - Dropout rate: {dropout}")
-
-        # Encoder: Compress temporal sequences
-        self.encoder_lstm1 = nn.LSTM(n_features, hidden_size, batch_first=True, dropout=dropout)
-        self.encoder_lstm2 = nn.LSTM(hidden_size, hidden_size//2, batch_first=True, dropout=dropout)
-
-        # Decoder: Reconstruct from compressed representation
-        self.decoder_lstm1 = nn.LSTM(hidden_size//2, hidden_size, batch_first=True, dropout=dropout)
-        self.decoder_lstm2 = nn.LSTM(hidden_size, n_features, batch_first=True, dropout=dropout)
-
-    def forward(self, x):
+    
+    def __init__(self, model, scaler, feature_names, seq_length, device='cpu'):
         """
-        Forward pass: Encode then decode input sequences
-        Purpose: Learn to reconstruct normal patterns; fail on anomalies
-        """
-        # Encoder: Extract temporal features and compress
-        encoded, _ = self.encoder_lstm1(x)  # First LSTM layer
-        encoded, (hidden, cell) = self.encoder_lstm2(encoded)  # Compression layer
-
-        # Bridge: Use final hidden state as compressed representation
-        # Repeat for sequence length to enable reconstruction
-        repeated = hidden[-1].unsqueeze(1).repeat(1, self.seq_length, 1)
-
-        # Decoder: Reconstruct original sequence from compressed state
-        decoded, _ = self.decoder_lstm1(repeated)  # Expand from compressed state
-        decoded, _ = self.decoder_lstm2(decoded)  # Reconstruct to original dimensions
-
-        return decoded
-
-class TimeSeriesDataset(Dataset):
-    """PyTorch Dataset wrapper for time series sequences"""
-    def __init__(self, sequences):
-        self.sequences = sequences
-        print(f"Created dataset with {len(sequences)} sequences")
-
-    def __len__(self):
-        return len(self.sequences)
-
-    def __getitem__(self, idx):
-        return torch.FloatTensor(self.sequences[idx])
-
-class LSTMAnomalyDetector:
-    """
-    LSTM Autoencoder for unsupervised anomaly detection in time series.
-
-    Core Principle: Train on normal data to learn typical patterns.
-    Anomalies produce higher reconstruction errors than normal data.
-
-    Time Series Handling:
-    - NO stationarity assumptions: Works with trending/seasonal data
-    - Preserves autocorrelation: Sequential modeling maintains correlation structure
-    - Learns seasonality: Recurring patterns captured without explicit deseasonalization
-    - Handles multivariate: Multiple features processed simultaneously
-    """
-
-    def __init__(self, seq_length=30, hidden_size=64, dropout=0.2, lr=0.001, exclude_cols=None, max_grad_norm=1.0):
-        """
-        Initialize detector with hyperparameters
-
+        Initialize explainer with trained model.
+        
         Args:
-            seq_length: Window size for temporal patterns (captures seasonality horizon)
-            hidden_size: LSTM hidden dimensions (model capacity)
-            dropout: Regularization to prevent overfitting
-            lr: Learning rate for optimization
-            exclude_cols: List of column names to exclude from training and prediction
-            max_grad_norm: Maximum gradient norm for clipping (prevents explosion)
+            model: Trained LSTMAutoencoder (PyTorch)
+            scaler: Fitted StandardScaler from training
+            feature_names: List of feature column names
+            seq_length: Sequence length used in training
+            device: torch device ('cpu' or 'cuda')
         """
+        self.model = model
+        self.scaler = scaler
+        self.feature_names = feature_names
         self.seq_length = seq_length
-        self.hidden_size = hidden_size
-        self.dropout = dropout
-        self.lr = lr
-        self.exclude_cols = exclude_cols or []
-        self.max_grad_norm = max_grad_norm
-        self.model = None
-        self.scaler = StandardScaler()  # Handles different feature scales
-        self.threshold = None
-        self.device = torch.device('cpu')
-        self.best_model_state = None  # FIXED: Store best model state in memory
-        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        print(f"LSTMAnomalyDetector initialized:")
-        print(f"  - Device: {self.device}")
-        print(f"  - Sequence length: {seq_length} (temporal window)")
-        print(f"  - Hidden size: {hidden_size}")
-        print(f"  - Learning rate: {lr}")
-        print(f"  - Gradient clipping: {max_grad_norm} (prevents explosion)")
-        if self.exclude_cols:
-            print(f"  - Excluded columns: {self.exclude_cols}")
-    def _validate_input_data(self, data, stage="training"):
+        self.device = device
+        self.model.eval()
+        
+        print(f"SHAPAnomalyExplainer initialized:")
+        print(f"  - Features: {len(feature_names)}")
+        print(f"  - Sequence length: {seq_length}")
+        print(f"  - Device: {device}")
+    
+    def _create_background_data(self, normal_sequences, n_samples=100):
         """
-        Validate data quality before processing
+        Create background dataset for SHAP from normal sequences.
+        
+        Background data represents "typical" model behavior for SHAP baselines.
+        Uses stratified sampling across the time series to capture variability.
+        
+        Args:
+            normal_sequences: Array of normal sequences [N, seq_len, features]
+            n_samples: Number of background samples (default 100, SHAP recommended)
+        
+        Returns:
+            Background sequences for SHAP explainer
+        """
+        n_total = len(normal_sequences)
+        n_samples = min(n_samples, n_total)
+        
+        # Stratified sampling: take samples evenly across time
+        indices = np.linspace(0, n_total-1, n_samples, dtype=int)
+        background = normal_sequences[indices]
+        
+        print(f"Created background dataset: {background.shape}")
+        return background
+        
+    def validate_shap_quality(self, shap_values, test_sequences):
+        """
+        Validate SHAP output quality and detect potential issues.
         
         Checks for:
-        - NaN values in rows (must be handled by user)
-        - Infinite values (mathematical errors)
-        """
-        numeric_data = data.select_dtypes(include=[np.number])
-        
-        # Check for NaN in rows - REJECT (user must handle)
-        nan_cols = numeric_data.columns[numeric_data.isnull().any()].tolist()
-        if nan_cols:
-            nan_counts = numeric_data[nan_cols].isnull().sum().to_dict()
-            raise ValueError(
-                f"NaN values detected in {len(nan_cols)} columns during {stage}:\n"
-                f"{nan_counts}\n"
-                f"handle missing values before passing data to the model.\n" #Options: df.fillna(), df.dropna(), or df.interpolate()
-                
-            )
-        
-        # Check for infinite values - REJECT
-        inf_mask = np.isinf(numeric_data.values)
-        if inf_mask.any():
-            inf_cols = numeric_data.columns[np.isinf(numeric_data).any()].tolist()
-            raise ValueError(
-                f"Infinite values detected in columns during {stage}: {inf_cols}\n"
-                f"Please handle infinite values before training."
-            )
-        
-        return True
-    
-    def _filter_columns(self, data, is_training=True):
-        """
-        Filter columns: remove exclusions, all-NaN columns, and constant features
+        - NaN/Inf values (computation errors)
+        - High feature correlation (SHAP attribution ambiguity)
+        - Low-variance features (noise/irrelevant features)
         
         Args:
-            data: Input DataFrame
-            is_training: If True, remove constant features. If False, use stored feature names.
+            shap_values: SHAP values [N, features]
+            test_sequences: Original sequences [N, seq_len, features]
+        
+        Returns:
+            validation_report: Dict with warnings and quality metrics
         """
-        if isinstance(data, pd.DataFrame):
-            self._validate_input_data(data, stage="training" if is_training else "prediction")
-            # Get numeric columns
-            numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
-            
-            # Apply user exclusions
-            cols_to_use = [col for col in numeric_cols if col not in self.exclude_cols]
-            X_subset = data[cols_to_use]
-            
-            # Remove all-NaN columns (edge case)
-            X_subset = X_subset.dropna(axis=1, how='all')
-            
-            # Remove constant features (zero variance causes StandardScaler to fail)
-            if is_training:
-                n_unique = X_subset.nunique()
-                non_constant_mask = n_unique > 1
-                constant_cols = X_subset.columns[~non_constant_mask].tolist()
-                
-                if constant_cols:
-                    print(f"Removed {len(constant_cols)} constant features (zero variance):")
-                    for col in constant_cols[:5]:  # Show first 5
-                        print(f"  - {col}")
-                    if len(constant_cols) > 5:
-                        print(f"  ... and {len(constant_cols) - 5} more")
-                
-                X_subset = X_subset.loc[:, non_constant_mask]
-                self.feature_names_ = X_subset.columns.tolist()  # Store for predict()
-            else:
-                # During prediction, use same features as training
-                if hasattr(self, 'feature_names_'):
-                    missing_features = set(self.feature_names_) - set(X_subset.columns)
-                    if missing_features:
-                        raise ValueError(
-                            f"Features missing in test data that were present in training: {missing_features}"
-                        )
-                    X_subset = X_subset[self.feature_names_]
-            
-            return X_subset
+        report = {
+            'status': 'PASS',
+            'warnings': [],
+            'metrics': {}
+        }
+        
+        # Check 1: NaN/Inf detection
+        nan_count = np.isnan(shap_values).sum()
+        inf_count = np.isinf(shap_values).sum()
+        
+        if nan_count > 0:
+            report['status'] = 'FAIL'
+            report['warnings'].append(f"Found {nan_count} NaN values in SHAP output")
+        
+        if inf_count > 0:
+            report['status'] = 'FAIL'
+            report['warnings'].append(f"Found {inf_count} Inf values in SHAP output")
+        
+        report['metrics']['nan_count'] = int(nan_count)
+        report['metrics']['inf_count'] = int(inf_count)
+        
+        # Check 2: Low-variance features (likely noise)
+        shap_std = np.std(shap_values, axis=0)
+        low_variance_threshold = 0.001
+        low_variance_features = np.where(shap_std < low_variance_threshold)[0]
+        
+        if len(low_variance_features) > 0:
+            report['warnings'].append(
+                f"Found {len(low_variance_features)} low-variance features (std < {low_variance_threshold})"
+            )
+            report['metrics']['low_variance_features'] = [
+                self.feature_names[i] for i in low_variance_features[:10]
+            ]
+        
+        # Check 3: High feature correlation (attribution ambiguity)
+        feature_values = test_sequences.mean(axis=1)  # [N, features]
+        correlation_matrix = np.corrcoef(feature_values.T)
+        
+        high_corr_threshold = 0.9
+        high_corr_pairs = []
+        n_features = len(self.feature_names)
+        
+        for i in range(n_features):
+            for j in range(i+1, n_features):
+                if abs(correlation_matrix[i, j]) > high_corr_threshold:
+                    high_corr_pairs.append({
+                        'feature_1': self.feature_names[i],
+                        'feature_2': self.feature_names[j],
+                        'correlation': float(correlation_matrix[i, j])
+                    })
+        
+        if len(high_corr_pairs) > 0:
+            report['warnings'].append(
+                f"Found {len(high_corr_pairs)} highly correlated feature pairs (|corr| > {high_corr_threshold})"
+            )
+            report['metrics']['high_correlation_pairs'] = high_corr_pairs[:5]
+        
+        # Check 4: SHAP value range sanity check
+        shap_range = (float(np.min(shap_values)), float(np.max(shap_values)))
+        shap_mean = float(np.mean(np.abs(shap_values)))
+        
+        report['metrics']['shap_value_range'] = shap_range
+        report['metrics']['mean_abs_shap'] = shap_mean
+        
+        # Summary
+        if report['status'] == 'PASS' and len(report['warnings']) == 0:
+            print("\n✓ SHAP quality validation: PASSED")
         else:
-            return data
+            print(f"\n⚠ SHAP quality validation: {report['status']}")
+            print(f"  Warnings: {len(report['warnings'])}")
+            for warning in report['warnings']:
+                print(f"  - {warning}")
+        
+        return report
+        
+    def compute_shap_values(self, test_sequences, background_sequences, max_samples=50):
+        n_test = min(len(test_sequences), max_samples)
+        test_subset = test_sequences[:n_test]
+        
+        print(f"\nComputing SHAP values for {n_test} samples using GradientExplainer...")
+        
+        class ReconstructionErrorModel(torch.nn.Module):
+            def __init__(self, autoencoder):
+                super().__init__()
+                self.autoencoder = autoencoder
+            
+            def forward(self, x):
+                reconstructed = self.autoencoder(x)
+                mse = torch.mean((x - reconstructed) ** 2, dim=(1, 2))
+                return mse.unsqueeze(-1)
+        
+        wrapper_model = ReconstructionErrorModel(self.model)
+        wrapper_model.eval()
+        
+        background_tensor = torch.FloatTensor(background_sequences).to(self.device)
+        test_tensor = torch.FloatTensor(test_subset).to(self.device)
+        
+        explainer = shap.GradientExplainer(wrapper_model, background_tensor)
+        shap_values = explainer.shap_values(test_tensor)
+        
+        with torch.no_grad():
+            base_values = wrapper_model(background_tensor).mean().item()
+        
+        if isinstance(shap_values, list):
+            shap_values = np.array(shap_values[0])
+        
+        # Remove all dimensions except [samples, features]
+        shap_values = np.squeeze(shap_values)  # Remove singleton dims
+        
+        # Handle different output shapes
+        if shap_values.ndim == 3:  # [samples, time, features]
+            shap_values = shap_values.mean(axis=1)
+        elif shap_values.ndim == 2 and shap_values.shape[0] != n_test:  # [time, features]
+            shap_values = shap_values.mean(axis=0, keepdims=True)  # → [1, features]
+        elif shap_values.ndim == 1:  # [features]
+            shap_values = shap_values.reshape(1, -1)  # → [1, features]
+        
+        print(f"SHAP computation complete: {shap_values.shape}")
+        return shap_values, base_values    
 
-    def _create_sequences(self, data):
+    def global_feature_importance(self, shap_values, top_n=20):
         """
-        Create sliding window sequences from time series data
-
-        Purpose: Convert time series into supervised learning format
-        - Maintains temporal order (preserves autocorrelation)
-        - Creates overlapping windows (captures all patterns)
+        Calculate global feature importance from SHAP values.
+        
+        Global importance = mean |SHAP value| across all samples.
+        Industry standard for "which features drive anomalies overall?"
+        
+        Args:
+            shap_values: SHAP values [N, features]
+            top_n: Number of top features to return
+        
+        Returns:
+            DataFrame with feature rankings and importance scores
         """
-        sequences = []
-        for i in range(len(data) - self.seq_length + 1):
-            sequences.append(data[i:(i + self.seq_length)])
+        # Mean absolute SHAP value per feature
+        importance = np.abs(shap_values).mean(axis=0)
+        
+        # Create ranking DataFrame
+        ranking_df = pd.DataFrame({
+            'feature': self.feature_names,
+            'mean_abs_shap': importance,
+            'importance_rank': range(1, len(importance) + 1)
+        }).sort_values('mean_abs_shap', ascending=False).reset_index(drop=True)
+        
+        # Update ranks
+        ranking_df['importance_rank'] = range(1, len(ranking_df) + 1)
+        
+        print(f"\nTop {top_n} features by global importance:")
+        print(ranking_df.head(top_n)[['importance_rank', 'feature', 'mean_abs_shap']])
+        
+        return ranking_df
+    
+    
+    def generate_executive_summary(self, shap_values, feature_ranking, 
+                                anomaly_count, total_samples, top_n=None):
+        if top_n is None:
+            top_n = min(5, len(feature_ranking))
+        
+        top_features = feature_ranking.head(top_n)
+        top_names = top_features['feature'].tolist()
+        top_importance = top_features['mean_abs_shap'].sum()
+        total_importance = feature_ranking['mean_abs_shap'].sum()
+        
+        pct_explained = (top_importance / total_importance) * 100
+        anomaly_rate = (anomaly_count / total_samples) * 100
+        
+        summary = f"""
+    === EXECUTIVE SUMMARY: ANOMALY ANALYSIS ===
+    Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-        print(f"Created {len(sequences)} sequences from {len(data)} data points")
-        return np.array(sequences)
+    OVERVIEW:
+    - Total Samples: {total_samples:,}
+    - Anomalies: {anomaly_count} ({anomaly_rate:.2f}%)
+    - Features Analyzed: {len(self.feature_names)}
 
-    def hyperparameter_search(self, X_train, param_grid, epochs=50):
+    KEY FINDINGS:
+    Top {top_n} features explain {pct_explained:.1f}% of anomalies:
+    """
+        for i, (name, imp) in enumerate(zip(top_names, top_features['mean_abs_shap']), 1):
+            summary += f"\n{i}. {name} (Importance: {imp:.4f})"
+        
+        summary += f"""
+
+    RECOMMENDATION:
+    Focus on top {top_n} features for root cause analysis.
+    """
+        return summary
+
+    def plot_global_importance(self, feature_ranking, output_dir, top_n=20):
         """
-        Grid search for optimal hyperparameters
-
-        Purpose: Find best configuration for your specific data patterns
-        Returns best parameters based on validation reconstruction error
+        Create global feature importance bar chart.
+        
+        Args:
+            feature_ranking: Global importance DataFrame
+            output_dir: Directory to save plot
+            top_n: Number of top features to plot
         """
-        print("Starting hyperparameter search...")
-        print(f"Parameter grid: {param_grid}")
+        top_features = feature_ranking.head(top_n)
+        
+        plt.figure(figsize=(10, 8))
+        plt.barh(range(len(top_features)), top_features['mean_abs_shap'])
+        plt.yticks(range(len(top_features)), top_features['feature'])
+        plt.xlabel('Mean |SHAP Value| (Feature Importance)', fontsize=12)
+        plt.ylabel('Feature', fontsize=12)
+        plt.title(f'Top {top_n} Features Driving Anomalies (Global)', fontsize=14, fontweight='bold')
+        plt.gca().invert_yaxis()
+        plt.tight_layout()
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = Path(output_dir) / f'global_importance_{timestamp}.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Saved: {filepath}")
+        return filepath
+    
+    def plot_shap_summary(self, shap_values, test_sequences, output_dir, top_n=20):
+        """
+        Create SHAP beeswarm plot showing feature value impact.
+        
+        Shows how feature values (low/high) affect model output.
+        
+        Args:
+            shap_values: SHAP values [N, features]
+            test_sequences: Original sequences for feature values
+            output_dir: Directory to save plot
+            top_n: Number of features to display
+        """
+        # Average feature values across time steps
+        feature_values = test_sequences.mean(axis=1)  # [N, features]
+        
+        plt.figure(figsize=(10, 8))
+        shap.summary_plot(
+            shap_values, 
+            feature_values,
+            feature_names=self.feature_names,
+            max_display=top_n,
+            show=False
+        )
+        plt.title('SHAP Feature Impact Distribution', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = Path(output_dir) / f'shap_summary_{timestamp}.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Saved: {filepath}")
+        return filepath
+    
+    def plot_local_explanation(self, shap_values, base_value, feature_values, 
+                               sample_idx, output_dir):
+        """
+        Create waterfall plot for a specific anomaly.
+        
+        Shows how each feature contributed to THIS specific anomaly's score.
+        
+        Args:
+            shap_values: SHAP values for all samples [N, features]
+            base_value: Expected value (baseline)
+            feature_values: Feature values for samples [N, features]
+            sample_idx: Index of anomaly to explain
+            output_dir: Directory to save plot
+        """
+        # Create SHAP Explanation object for waterfall
+        explanation = shap.Explanation(
+            values=shap_values[sample_idx],
+            base_values=base_value if np.isscalar(base_value) else base_value[0],
+            data=feature_values[sample_idx],
+            feature_names=self.feature_names
+        )
+        
+        plt.figure(figsize=(10, 8))
+        shap.waterfall_plot(explanation, max_display=15, show=False)
+        plt.title(f'Local Explanation: Anomaly #{sample_idx}', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = Path(output_dir) / f'waterfall_anomaly_{sample_idx}_{timestamp}.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Saved: {filepath}")
+        return filepath
+    
+    def export_anomaly_details(self, shap_values, test_sequences, 
+                               anomaly_indices, output_dir, top_k=3):
+        """
+        Export detailed CSV of anomalies with top contributing features.
+        
+        Args:
+            shap_values: SHAP values [N, features]
+            test_sequences: Test sequences [N, seq_len, features]
+            anomaly_indices: Indices of anomalous samples
+            output_dir: Directory to save CSV
+            top_k: Number of top features to include per anomaly
+        
+        Returns:
+            DataFrame with anomaly details
+        """
+        records = []
+        
+        for idx in anomaly_indices:
+            # Get SHAP values for this anomaly
+            sample_shap = shap_values[idx]
+            
+            # Top K features by absolute SHAP value
+            top_k_idx = np.argsort(np.abs(sample_shap))[-top_k:][::-1]
+            
+            # Feature values (averaged across time)
+            feature_vals = test_sequences[idx].mean(axis=0)
+            
+            record = {'anomaly_index': idx}
+            
+            for i, feat_idx in enumerate(top_k_idx, 1):
+                record[f'top_{i}_feature'] = self.feature_names[feat_idx]
+                record[f'top_{i}_shap_value'] = sample_shap[feat_idx]
+                record[f'top_{i}_feature_value'] = feature_vals[feat_idx]
+            
+            records.append(record)
+        
+        df = pd.DataFrame(records)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = Path(output_dir) / f'anomaly_details_{timestamp}.csv'
+        df.to_csv(filepath, index=False)
+        
+        print(f"Saved: {filepath}")
+        print(f"Exported {len(df)} anomaly details")
+        
+        return df
+    
+    def generate_full_report(self, test_sequences, anomaly_flags, 
+                            normal_sequences, output_dir='./shap_reports',
+                            n_background=100, max_anomalies=50, top_n_features=10):
+        """Generate SHAP report with Excel + embedded images."""
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        print("="*60)
+        print("STARTING SHAP EXPLAINABILITY PIPELINE")
+        print("="*60)
+        
+        anomaly_indices = np.where(anomaly_flags)[0]
+        n_anomalies = min(len(anomaly_indices), max_anomalies)
+        anomaly_subset = test_sequences[anomaly_indices[:n_anomalies]]
+        
+        print(f"\nAnalyzing {n_anomalies} anomalies, top {top_n_features} features")
+        
+        background = self._create_background_data(normal_sequences, n_background)
+        shap_values, base_values = self.compute_shap_values(
+            anomaly_subset, background, max_samples=n_anomalies
+        )
+        
+        n_display = len(self.feature_names) if top_n_features == 'all' else top_n_features
+        feature_ranking = self.global_feature_importance(shap_values, top_n=n_display)
+        
+        if top_n_features != 'all':
+            feature_ranking = feature_ranking.head(top_n_features)
+        
+        summary = self.generate_executive_summary(
+            shap_values, feature_ranking, len(anomaly_indices), 
+            len(test_sequences), top_n=top_n_features if top_n_features != 'all' else 10
+        )
+        
+        # Generate plots
+        print("\nGenerating visualizations...")
+        plot1 = self.plot_global_importance(feature_ranking, output_path, top_n=len(feature_ranking))
+        plot2 = self.plot_shap_summary(shap_values, anomaly_subset, output_path, top_n=len(feature_ranking))
+        
+        top_k = min(3, top_n_features if isinstance(top_n_features, int) else 3)
+        details_df = self.export_anomaly_details(
+            shap_values, anomaly_subset, range(n_anomalies), output_path, top_k=top_k
+        )
+        
+        # Export to Excel with images
+        excel_path = self.export_to_excel_with_images(
+            summary, feature_ranking, details_df, output_path, [plot1, plot2]
+        )
+        
+        print(f"\n{'='*60}\nSHAP COMPLETE\nExcel: {excel_path}\n{'='*60}")
+        return {'excel_report': excel_path}
 
-        best_params = None
-        best_score = float('inf')
-        results = []
-
-        # Generate all parameter combinations
-        param_names = list(param_grid.keys())
-        param_values = list(param_grid.values())
-
-        for params in product(*param_values):
-            param_dict = dict(zip(param_names, params))
-            print(f"\nTesting parameters: {param_dict}")
-
-            # Create temporary detector with current parameters
-            temp_detector = LSTMAnomalyDetector(exclude_cols=self.exclude_cols, **param_dict)
-
+    def export_to_excel_with_images(self, summary_text, feature_ranking, 
+                                    anomaly_details, output_dir, image_paths):
+        """Export to Excel with embedded images, cleanup temp files."""
+        from openpyxl.drawing.image import Image as ExcelImage
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = Path(output_dir) / f'shap_analysis_{timestamp}.xlsx'
+        
+        with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            summary_lines = [line.strip() for line in summary_text.strip().split('\n') if line.strip()]
+            summary_df = pd.DataFrame({'Executive Summary': summary_lines})
+            summary_df.to_excel(writer, sheet_name='Executive Summary', index=False)
+            feature_ranking.to_excel(writer, sheet_name='Feature Ranking', index=False)
+            anomaly_details.to_excel(writer, sheet_name='Anomaly Details', index=False)
+            
+            workbook = writer.book
+            viz_sheet = workbook.create_sheet('Visualizations')
+            
+            row = 1
+            for img_path in image_paths:
+                if Path(img_path).exists():
+                    img = ExcelImage(str(img_path))
+                    img.width = 600
+                    img.height = 480
+                    viz_sheet.add_image(img, f'A{row}')
+                    row += 30
+        
+        # Delete all temp files (PNG and CSV)
+        for img_path in image_paths:
             try:
-                # Quick training for evaluation
-                temp_detector.fit(X_train, epochs=epochs, validation_split=0.3, verbose=False)
-
-                # Evaluate on validation data
-                X_filtered = temp_detector._filter_columns(X_train, is_training=True) #X_filtered = temp_detector._filter_columns(X_train)
-                X_scaled = temp_detector.scaler.transform(X_filtered)
-                sequences = temp_detector._create_sequences(X_scaled)
-
-                # Use subset for quick evaluation
-                val_size = min(100, len(sequences) // 3)
-                val_sequences = sequences[-val_size:]
-
-                temp_detector.model.eval()
-                with torch.no_grad():
-                    val_tensor = torch.FloatTensor(val_sequences).to(temp_detector.device)
-                    output = temp_detector.model(val_tensor)
-                    val_loss = torch.mean((val_tensor - output) ** 2).item()
-
-                results.append({**param_dict, 'val_loss': val_loss})
-                print(f"Validation loss: {val_loss:.6f}")
-
-                if val_loss < best_score:
-                    best_score = val_loss
-                    best_params = param_dict
-                    print(f"New best parameters found!")
-
-            except Exception as e:
-                print(f"Error with parameters {param_dict}: {e}")
-                continue
-
-        print(f"\nHyperparameter search complete!")
-        print(f"Best parameters: {best_params}")
-        print(f"Best validation loss: {best_score:.6f}")
-
-        # Update current detector with best parameters
-        for key, value in best_params.items():
-            setattr(self, key, value)
-
-        return best_params, results
-
-    def fit(self, X_train, epochs=100, batch_size=32, validation_split=0.2, verbose=True):
-        """
-        Train autoencoder on NORMAL data only (unsupervised learning)
-
-        Purpose: Learn patterns of normal behavior
-        - No target variable needed (autoencoder: input = target)
-        - Learns to reconstruct typical patterns with low error
-        - Will struggle to reconstruct anomalous patterns (high error)
-
-        Time Series Considerations:
-        - Preserves temporal order in sequences
-        - StandardScaler handles different feature magnitudes
-        - No detrending/deseasonalization (model learns these patterns)
-        """
-        print(f"\nTraining on {len(X_train)} normal data points...")
-        print("Note: Training on NORMAL data only - no anomalies should be included")
-
-        # Filter out excluded columns
-        # X_filtered = self._filter_columns(X_train)
-        X_filtered = self._filter_columns(X_train, is_training=True)
-        print(f"Using {X_filtered.shape[1]} features after excluding {len(self.exclude_cols)} columns")
-
-        # Scale features (important for LSTM convergence)
-        print("Scaling features...")
-        # X_scaled = self.scaler.fit_transform(X_filtered)
-        # print(f"Feature scaling completed. Mean ~0, Std ~1 for all features")
-        X_scaled = self.scaler.fit_transform(X_filtered)
+                Path(img_path).unlink()
+            except:
+                pass
         
-        # CRITICAL: Validate no NaN created during scaling
-        if np.isnan(X_scaled).any():
-            raise ValueError(
-                "NaN values created during scaling. This indicates:\n"
-                "1. Features with zero variance (all identical values)\n"
-                "2. Extreme outliers causing numerical instability \n"
-            )
+        # Delete CSV file
+        csv_pattern = Path(output_dir) / f'anomaly_details_{timestamp}.csv'
+        try:
+            csv_pattern.unlink()
+        except:
+            pass
         
-        print(f"Feature scaling completed. Mean ~0, Std ~1 for all features")
+        print(f"\n✓ Excel only: {filepath}")
+        return filepath
 
-        # Create temporal sequences (sliding windows)
-        print("Creating temporal sequences...")
-        sequences = self._create_sequences(X_scaled)
-        print(f"Sequence shape: {sequences.shape} [samples, time_steps, features]")
-
-        # Split train/validation while preserving temporal order
-        val_size = int(len(sequences) * validation_split)
-        train_seq = sequences[:-val_size] if val_size > 0 else sequences
-        val_seq = sequences[-val_size:] if val_size > 0 else sequences[:50]
-
-        print(f"Training sequences: {len(train_seq)}")
-        print(f"Validation sequences: {len(val_seq)}")
-
-        # Create datasets and dataloaders
-        train_dataset = TimeSeriesDataset(train_seq)
-        val_dataset = TimeSeriesDataset(val_seq)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size)
-
-        # Initialize model
-        print("Building LSTM Autoencoder model...")
-        self.model = LSTMAutoencoder(
-            X_filtered.shape[1], self.seq_length, self.hidden_size, self.dropout
-        ).to(self.device)
-
-        total_params = sum(p.numel() for p in self.model.parameters())
-        print(f"Model has {total_params:,} trainable parameters")
-
-        criterion = nn.MSELoss()  # Mean Squared Error for reconstruction
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
-
-        # Training loop with early stopping
-        print(f"\nStarting training for up to {epochs} epochs...")
-        best_val_loss = float('inf')
-        patience_counter = 0
-
-        for epoch in range(epochs):
-            # Training phase
-            self.model.train()
-            train_loss = 0
-            batch_count = 0
-
-            for batch in train_loader:
-                batch = batch.to(self.device)
-                optimizer.zero_grad()
-
-                # Forward pass: input = target for autoencoder
-                output = self.model(batch)
-                loss = criterion(output, batch)  # Reconstruction error
-
-                # loss.backward()
-                # optimizer.step()
-                # train_loss += loss.item()
-                # batch_count += 1
-                loss.backward()
-                
-                # Gradient clipping to prevent explosion
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
-                
-                optimizer.step()
-                train_loss += loss.item()
-                batch_count += 1
-
-            # Validation phase
-            self.model.eval()
-            val_loss = 0
-            val_batch_count = 0
-
-            with torch.no_grad():
-                for batch in val_loader:
-                    batch = batch.to(self.device)
-                    output = self.model(batch)
-                    val_loss += criterion(output, batch).item()
-                    val_batch_count += 1
-
-            # Calculate average losses
-            train_loss /= batch_count
-            val_loss /= val_batch_count
-            scheduler.step(val_loss)
-
-            # Print progress
-            if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
-                current_lr = optimizer.param_groups[0]['lr']
-                print(f'Epoch {epoch:3d}: Train Loss: {train_loss:.6f}, '
-                      f'Val Loss: {val_loss:.6f}, LR: {current_lr:.6f}')
-
-            # FIXED: Early stopping - store state in memory instead of disk
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                # Store state dict in memory (not disk)
-                self.best_model_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
-            else:
-                patience_counter += 1
-                if patience_counter >= 10:
-                    print(f'Early stopping at epoch {epoch} (patience exceeded)')
-                    break
-
-        # FIXED: Load best model weights from memory instead of disk
-        if self.best_model_state is not None:
-            self.model.load_state_dict(self.best_model_state)
-            print(f"Loaded best model with validation loss: {best_val_loss:.6f}")
-
-        # Set anomaly threshold using validation reconstruction errors
-        print("\nCalculating anomaly threshold...")
-        self.model.eval()
-        val_errors = []
-
-        with torch.no_grad():
-            for batch in val_loader:
-                batch = batch.to(self.device)
-                output = self.model(batch)
-                # Calculate per-sequence reconstruction error
-                mse = torch.mean((batch - output) ** 2, dim=(1, 2))
-                val_errors.extend(mse.cpu().numpy())
-
-        # Set threshold at 95th percentile of validation errors
-        # Validate threshold calculation
-        val_errors = np.array(val_errors)
-        if len(val_errors) == 0 or np.isnan(val_errors).any():
-            raise ValueError(
-                "Cannot calculate anomaly threshold - validation errors contain NaN.\n"
-                "gradient clipping not working properly."
-            )
+    def export_to_excel_only(self, summary_text, feature_ranking, anomaly_details, output_dir):
+        """Export everything to Excel with embedded images."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = Path(output_dir) / f'shap_analysis_{timestamp}.xlsx'
         
-        # Set threshold at 95th percentile of validation errors
-        self.threshold = np.percentile(val_errors, 95)
-        print(f"Anomaly threshold set at 95th percentile: {self.threshold:.6f}")
-        print("Sequences with reconstruction error > threshold will be flagged as anomalies")
-
-        # Print threshold statistics
-        mean_error = np.mean(val_errors)
-        std_error = np.std(val_errors)
-        print(f"Validation error statistics:")
-        print(f"  - Mean: {mean_error:.6f}")
-        print(f"  - Std: {std_error:.6f}")
-        print(f"  - 95th percentile (threshold): {self.threshold:.6f}")
-
-        return self
-
-    def predict(self, X_test, date_col=None, batch_size=32, return_feature_errors=False):
-        """
-        Detect anomalies in test data with optional per-feature error analysis
-
-        Purpose: Identify sequences with high reconstruction error
-        - High error = pattern doesn't match learned normal behavior
-        - Returns anomaly flags and confidence scores
-        - Optional: Per-feature errors for interpretability
-
-        Output:
-        - reconstruction_error: MSE between input and reconstructed sequence
-        - is_anomaly: Binary flag (error > threshold)
-        - anomaly_score: Normalized score (error / threshold)
-        - feature_errors: Per-feature reconstruction errors (if requested)
-
-        Value of Per-Feature Errors:
-        - **Root Cause Analysis**: Know which metrics are anomalous (CPU, memory, disk I/O)
-        - **Targeted Investigation**: Focus on specific problematic profiling metrics
-        - **Feature Importance**: Understand which features drive the anomaly decision
-        """
-        print(f"\nDetecting anomalies in {len(X_test)} test samples...")
-
-        # Filter out excluded columns (same as training)
-        # X_filtered = self._filter_columns(X_test)
-        X_filtered = self._filter_columns(X_test, is_training=False)
-
-        # Scale test data using training statistics (important!)
-        print("Scaling test data using training statistics...")
-        X_scaled = self.scaler.transform(X_filtered)
-        feature_names = X_filtered.columns.tolist()
-
-        # Create sequences
-        print("Creating test sequences...")
-        sequences = self._create_sequences(X_scaled)
-        test_dataset = TimeSeriesDataset(sequences)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
-        # Calculate reconstruction errors (both overall and per-feature)
-        print("Computing reconstruction errors...")
-        if return_feature_errors:
-            print("  - Including per-feature error analysis for interpretability")
-
-        self.model.eval()
-        errors = []
-        all_feature_errors = []
-        processed_batches = 0
-
-        with torch.no_grad():
-            for batch in test_loader:
-                batch = batch.to(self.device)
-                output = self.model(batch)
-
-                # Overall per-sequence MSE (reconstruction error)
-                mse = torch.mean((batch - output) ** 2, dim=(1, 2))
-                errors.extend(mse.cpu().numpy())
-
-                # Per-feature reconstruction errors for interpretability
-                # Shape: [batch_size, n_features] - average error across time steps per feature
-                if return_feature_errors:
-                    feature_errors = torch.mean((batch - output) ** 2, dim=1)  # [batch, features]
-                    all_feature_errors.extend(feature_errors.cpu().numpy())
-
-                processed_batches += 1
-
-        errors = np.array(errors)
-        print(f"Processed {processed_batches} batches, {len(errors)} sequences")
-
-        # Apply threshold to identify anomalies
-        anomaly_flags = errors > self.threshold
-        anomaly_scores = errors / self.threshold  # Normalized confidence
-
-        print(f"Anomaly detection results:")
-        print(f"  - Total sequences: {len(errors)}")
-        print(f"  - Anomalies detected: {np.sum(anomaly_flags)}")
-        print(f"  - Anomaly rate: {np.mean(anomaly_flags)*100:.2f}%")
-        print(f"  - Error range: [{np.min(errors):.6f}, {np.max(errors):.6f}]")
-
-        # Create results DataFrame
-        # Note: seq_length-1 rows lost due to sequence windowing
-        start_idx = self.seq_length - 1
-        results = pd.DataFrame({
-            'reconstruction_error': errors,
-            'is_anomaly': anomaly_flags,
-            'anomaly_score': anomaly_scores
-        })
-
-        # Add per-feature errors for interpretability
-        if return_feature_errors:
-            all_feature_errors = np.array(all_feature_errors)
-            print(f"Added per-feature error analysis for {len(feature_names)} features")
-
-            # Add each feature's error as a separate column
-            feature_error_df = pd.DataFrame(
-                all_feature_errors,
-                columns=[f'{name}_error' for name in feature_names]
-            )
-            results = pd.concat([results, feature_error_df], axis=1)
-
-            # Identify top contributing features for each anomaly
-            if np.any(anomaly_flags):
-                print("Analyzing which features contribute most to anomalies...")
-                anomaly_indices = np.where(anomaly_flags)[0]
-
-                # Calculate mean feature errors for anomalous vs normal sequences
-                normal_feature_errors = all_feature_errors[~anomaly_flags].mean(axis=0)
-                anomaly_feature_errors = all_feature_errors[anomaly_flags].mean(axis=0)
-
-                # Feature contribution ranking (anomaly error / normal error ratio)
-                feature_contributions = anomaly_feature_errors / (normal_feature_errors + 1e-8)
-                feature_ranking = sorted(zip(feature_names, feature_contributions),
-                                       key=lambda x: x[1], reverse=True)
-
-                print(f"\nTop features contributing to anomalies:")
-                for i, (feature, contrib) in enumerate(feature_ranking[:5]):
-                    print(f"  {i+1}. {feature}: {contrib:.2f}x higher error than normal")
-
-        # Add date column if provided
-        if date_col and date_col in X_test.columns:
-            available_dates = X_test[date_col].iloc[start_idx:start_idx + len(errors)]
-            results[date_col] = available_dates.reset_index(drop=True)
-            print(f"Added date column: {date_col}")
-
-        # Print top anomalies with feature breakdown
-        if np.any(anomaly_flags):
-            top_anomalies = results[results['is_anomaly']].nlargest(5, 'reconstruction_error')
-            print(f"\nTop 5 anomalies:")
-
-            for idx, row in top_anomalies.iterrows():
-                date_str = f" on {row[date_col]}" if date_col in results.columns else ""
-                print(f"  - Overall Error: {row['reconstruction_error']:.6f}, "
-                      f"Score: {row['anomaly_score']:.2f}{date_str}")
-
-                # Show which features had highest errors for this anomaly
-                if return_feature_errors:
-                    feature_errors_this_row = [(fname, row[f'{fname}_error'])
-                                             for fname in feature_names]
-                    top_features = sorted(feature_errors_this_row, key=lambda x: x[1], reverse=True)[:3]
-
-                    print(f"    Top contributing features:")
-                    for feat_name, feat_error in top_features:
-                        print(f"      - {feat_name}: {feat_error:.6f}")
-
-        return results
+        with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            # Sheet 1: Executive Summary
+            summary_lines = [line.strip() for line in summary_text.strip().split('\n') if line.strip()]
+            summary_df = pd.DataFrame({'Executive Summary': summary_lines})
+            summary_df.to_excel(writer, sheet_name='Executive Summary', index=False)
+            
+            # Sheet 2: Feature Ranking
+            feature_ranking.to_excel(writer, sheet_name='Feature Ranking', index=False)
+            
+            # Sheet 3: Anomaly Details  
+            anomaly_details.to_excel(writer, sheet_name='Anomaly Details', index=False)
+        
+        print(f"\n✓ Excel report saved: {filepath}")
+        return filepath
