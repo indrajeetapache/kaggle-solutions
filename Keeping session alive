@@ -53,6 +53,50 @@ class SHAPAnomalyExplainer:
 
     # ==================== PHASE 1: HELPER FUNCTIONS ====================
     
+    def _calculate_historical_stats_from_df(self, original_df, feature_names_subset, threshold=95):
+        """
+        Calculate historical statistics from RAW original DataFrame.
+        This ensures stats match the original unscaled data distribution.
+        
+        Args:
+            original_df: Original unscaled DataFrame
+            feature_names_subset: List of feature names to compute
+            threshold: Percentile threshold (e.g., 95, 98)
+            
+        Returns:
+            dict: {feature_name: {'mean': X, 'std': Y, 'p_lower': Z, 'p_upper': W, ...}}
+        """
+        print(f"\nCalculating historical stats from RAW data (threshold={threshold}%)...")
+        
+        p_lower = (100 - threshold) / 2
+        p_upper = 100 - p_lower
+        
+        historical_stats = {}
+        
+        for feature_name in feature_names_subset:
+            if feature_name not in original_df.columns:
+                continue
+                
+            feature_values = original_df[feature_name].values
+            
+            stats = {
+                'mean': float(np.mean(feature_values)),
+                'std': float(np.std(feature_values)),
+                'min': float(np.min(feature_values)),
+                'max': float(np.max(feature_values)),
+                'p_lower': float(np.percentile(feature_values, p_lower)),
+                'p25': float(np.percentile(feature_values, 25)),
+                'p50': float(np.percentile(feature_values, 50)),
+                'p75': float(np.percentile(feature_values, 75)),
+                'p_upper': float(np.percentile(feature_values, p_upper)),
+                'threshold': threshold
+            }
+            
+            historical_stats[feature_name] = stats
+        
+        print(f"  Computed RAW stats for {len(historical_stats)} features (P{p_lower:.1f}-P{p_upper:.1f})")
+        return historical_stats
+    
     def _calculate_historical_stats(self, normal_sequences, feature_subset=None, threshold=95):
         """
         Calculate historical statistics from normal training sequences.
@@ -215,12 +259,46 @@ class SHAPAnomalyExplainer:
             'Unknown': 'Unknown'
         }
         return criticality_map.get(dq_dimension, 'Unknown')
+    
+    def _filter_anomalies_by_date(self, anomaly_indices, original_df, date_col, report_dates):
+        """
+        Filter anomaly indices to only include specified dates.
+        
+        Args:
+            anomaly_indices: Array of anomaly positions
+            original_df: Original DataFrame with date column
+            date_col: Name of date column
+            report_dates: Single date string, list of dates, or None
+            
+        Returns:
+            np.array: Filtered anomaly indices
+        """
+        # Convert report_dates to list if single date
+        if isinstance(report_dates, str):
+            report_dates = [report_dates]
+        
+        # Convert to datetime for comparison
+        report_dates = [pd.to_datetime(d).date() for d in report_dates]
+        
+        filtered_indices = []
+        
+        for anomaly_idx in anomaly_indices:
+            # Calculate original row index (last timestep of sequence)
+            original_row = anomaly_idx + self.seq_length - 1
+            
+            if original_row < len(original_df):
+                row_date = pd.to_datetime(original_df.iloc[original_row][date_col]).date()
+                
+                if row_date in report_dates:
+                    filtered_indices.append(anomaly_idx)
+        
+        return np.array(filtered_indices)
 
     # ==================== PHASE 2: DATAFRAME BUILDERS ====================
     
     def build_summary_dataframe(self, anomaly_count, total_samples, date_range,
                                  columns_analyzed, columns_with_anomalies,
-                                 top_features, threshold):
+                                 top_features, threshold, anomalies_df=None):
         """
         Build structured summary DataFrame for Tab 1.
         
@@ -232,16 +310,24 @@ class SHAPAnomalyExplainer:
             columns_with_anomalies: Number of features with anomalies
             top_features: List of top feature names
             threshold: Anomaly detection threshold
+            anomalies_df: Anomalies DataFrame to calculate real severity breakdown
             
         Returns:
             DataFrame: Summary metrics
         """
         print("\nBuilding summary DataFrame...")
         
-        # Calculate severity breakdown (placeholder - will enhance later)
-        critical_anomalies = int(anomaly_count * 0.25)  # 25% critical
-        high_anomalies = int(anomaly_count * 0.40)      # 40% high
-        low_anomalies = anomaly_count - critical_anomalies - high_anomalies
+        # Calculate REAL severity breakdown from anomalies_df
+        if anomalies_df is not None and 'Severity' in anomalies_df.columns:
+            severity_counts = anomalies_df['Severity'].value_counts()
+            critical_anomalies = severity_counts.get('Critical', 0)
+            high_anomalies = severity_counts.get('Warning', 0)
+            low_anomalies = severity_counts.get('Unknown', 0)
+        else:
+            # Fallback if anomalies_df not provided
+            critical_anomalies = 0
+            high_anomalies = 0
+            low_anomalies = anomaly_count
         
         date_range_str = f"{date_range[0]} to {date_range[1]}"
         top_features_str = ", ".join(top_features)
@@ -303,17 +389,22 @@ class SHAPAnomalyExplainer:
         for idx in range(len(anomaly_subset)):
             sample_shap = shap_values[idx]
             top_k_idx = np.argsort(np.abs(sample_shap))[-top_k:][::-1]
-            feature_vals = anomaly_subset[idx].mean(axis=0)
+            
+            # Get raw values from original DataFrame
+            original_row_idx = mapping_df.iloc[idx]['original_row_idx']
             
             pipeline_id = mapping_df.iloc[idx]['pipeline_id']
             timestamp = mapping_df.iloc[idx]['timestamp']
             
             for rank, feat_idx in enumerate(top_k_idx, 1):
                 feature_name = self.feature_names[feat_idx]
-                feature_value = feature_vals[feat_idx]
+                
+                # Extract RAW value from original DataFrame
+                raw_feature_value = original_df.iloc[original_row_idx][feature_name]
+                
                 shap_value = sample_shap[feat_idx]
                 
-                # Get historical stats
+                # Get historical stats (computed from raw data)
                 stats = historical_stats.get(feature_name, {})
                 hist_mean = stats.get('mean', 0)
                 hist_std = stats.get('std', 1)
@@ -322,20 +413,23 @@ class SHAPAnomalyExplainer:
                 hist_p_lower = stats.get('p_lower', 0)
                 hist_p_upper = stats.get('p_upper', 0)
                 
-                # Calculate metrics
-                z_score = (feature_value - hist_mean) / hist_std if hist_std > 0 else 0
+                # Calculate metrics using RAW values
+                z_score = (raw_feature_value - hist_mean) / hist_std if hist_std > 0 else 0
                 expected_value = hist_mean
-                difference = feature_value - expected_value
+                difference = raw_feature_value - expected_value
                 deviation_pct = (difference / expected_value * 100) if expected_value != 0 else 0
                 normal_range = f"{hist_p_lower:.2f}-{hist_p_upper:.2f}"
+                
+                # Get scaled value for reference
+                scaled_feature_value = anomaly_subset[idx].mean(axis=0)[feat_idx]
                 
                 # DQ dimension and severity
                 dq_dimension = self._get_dq_dimension(feature_name)
                 severity = self._get_severity_from_dq_dimension(dq_dimension)
                 
-                # Business description
+                # Business description using RAW values
                 description = self._generate_business_description(
-                    z_score, feature_value, normal_range, feature_name, z_thresholds
+                    z_score, raw_feature_value, normal_range, feature_name, z_thresholds
                 )
                 
                 record = {
@@ -346,7 +440,8 @@ class SHAPAnomalyExplainer:
                     'dq_dimension': dq_dimension,
                     'Severity': severity,
                     'Anomaly_Score': abs(shap_value),
-                    'Actual_Value': feature_value,
+                    'Raw_Value': raw_feature_value,
+                    'Scaled_Value': scaled_feature_value,
                     'Expected_Value': expected_value,
                     'Difference': difference,
                     'Deviation_%': deviation_pct,
@@ -354,6 +449,7 @@ class SHAPAnomalyExplainer:
                     'Historical_Std': hist_std,
                     'Historical_Min': hist_min,
                     'Historical_Max': hist_max,
+                    'Normal_Range': normal_range,
                     'Z-Score': z_score,
                     'Description': description
                 }
@@ -393,13 +489,18 @@ class SHAPAnomalyExplainer:
         for idx in range(len(anomaly_subset)):
             sample_shap = shap_values[idx]
             top_k_idx = np.argsort(np.abs(sample_shap))[-top_k:][::-1]
-            feature_vals = anomaly_subset[idx].mean(axis=0)
             
+            # Get raw values from original DataFrame
+            original_row_idx = mapping_df.iloc[idx]['original_row_idx']
             pipeline_id = mapping_df.iloc[idx]['pipeline_id']
             
             for rank, feat_idx in enumerate(top_k_idx, 1):
                 feature_name = self.feature_names[feat_idx]
-                feature_value = feature_vals[feat_idx]
+                
+                # Extract RAW value from original DataFrame
+                raw_feature_value = original_df.iloc[original_row_idx][feature_name]
+                scaled_feature_value = anomaly_subset[idx].mean(axis=0)[feat_idx]
+                
                 contribution_score = abs(sample_shap[feat_idx])
                 
                 stats = historical_stats.get(feature_name, {})
@@ -408,17 +509,18 @@ class SHAPAnomalyExplainer:
                 hist_p_lower = stats.get('p_lower', 0)
                 hist_p_upper = stats.get('p_upper', 0)
                 
-                z_score = (feature_value - hist_mean) / hist_std if hist_std > 0 else 0
+                z_score = (raw_feature_value - hist_mean) / hist_std if hist_std > 0 else 0
                 normal_range = f"{hist_p_lower:.2f}-{hist_p_upper:.2f}"
                 
                 description = self._generate_business_description(
-                    z_score, feature_value, normal_range, feature_name, z_thresholds
+                    z_score, raw_feature_value, normal_range, feature_name, z_thresholds
                 )
                 
                 record = {
                     'pipeline_id': pipeline_id,
                     'Feature_Name': feature_name,
-                    'Feature_Value': feature_value,
+                    'Raw_Value': raw_feature_value,
+                    'Scaled_Value': scaled_feature_value,
                     'Normal_Range': normal_range,
                     'Contribution_Score': contribution_score,
                     'Business_Description': description,
@@ -603,9 +705,10 @@ class SHAPAnomalyExplainer:
         return summary
 
     def generate_full_report(self, test_sequences, anomaly_flags, normal_sequences,
-                            original_df=None, date_col='load_date', top_k_features=3,
-                            z_score_thresholds=None, threshold=95, output_dir='./shap_reports',
-                            n_background=100, max_anomalies=50, top_n_features=10):
+                            original_df=None, date_col='load_date', report_dates=None,
+                            top_k_features=3, z_score_thresholds=None, threshold=95, 
+                            output_dir='./shap_reports', n_background=100, 
+                            max_anomalies=50, top_n_features=10):
         """
         Generate complete SHAP report with structured DataFrames.
         
@@ -615,6 +718,8 @@ class SHAPAnomalyExplainer:
             normal_sequences: Normal training sequences
             original_df: Original DataFrame (required for new features)
             date_col: Date column name in original_df
+            report_dates: Single date, list of dates, or None (all dates)
+                         Examples: '2025-10-01', ['2025-10-01', '2025-10-05'], None
             top_k_features: Number of top features per anomaly (or 'all')
             z_score_thresholds: Custom Z-score thresholds dict
             threshold: Percentile threshold for normal range (e.g., 95, 98)
@@ -634,6 +739,19 @@ class SHAPAnomalyExplainer:
         print("="*60)
 
         anomaly_indices = np.where(anomaly_flags)[0]
+        
+        # Filter anomalies by date if report_dates specified
+        if report_dates is not None and original_df is not None:
+            filtered_indices = self._filter_anomalies_by_date(
+                anomaly_indices, original_df, date_col, report_dates
+            )
+            if len(filtered_indices) == 0:
+                print(f"\nWARNING: No anomalies found for date(s): {report_dates}")
+                print("Proceeding with all anomalies instead.")
+            else:
+                anomaly_indices = filtered_indices
+                print(f"\nFiltered to {len(anomaly_indices)} anomalies for date(s): {report_dates}")
+        
         n_anomalies = min(len(anomaly_indices), max_anomalies)
         anomaly_subset = test_sequences[anomaly_indices[:n_anomalies]]
 
@@ -666,29 +784,23 @@ class SHAPAnomalyExplainer:
             for feat_idx in top_k_idx:
                 unique_features_in_anomalies.add(feat_idx)
         
-        feature_subset = list(unique_features_in_anomalies)
-        historical_stats = self._calculate_historical_stats(normal_sequences, feature_subset, threshold)
+        # Get feature names that need stats
+        feature_names_subset = [self.feature_names[i] for i in unique_features_in_anomalies]
+        
+        # Calculate stats from ORIGINAL RAW DATA (not scaled sequences)
+        historical_stats = self._calculate_historical_stats_from_df(
+            original_df, feature_names_subset, threshold
+        )
 
         # Build structured DataFrames
         if original_df is not None:
-            # Tab 1: Summary
             date_range = (
                 original_df[date_col].min(),
                 original_df[date_col].max()
             )
             top_3_features = feature_ranking.head(3)['feature'].tolist()
             
-            summary_df = self.build_summary_dataframe(
-                anomaly_count=len(anomaly_indices),
-                total_samples=len(test_sequences),
-                date_range=date_range,
-                columns_analyzed=len(self.feature_names),
-                columns_with_anomalies=len(unique_features_in_anomalies),
-                top_features=top_3_features,
-                threshold=threshold
-            )
-
-            # Tab 2: Anomaly Details
+            # Tab 2: Anomaly Details (build FIRST to calculate real severity)
             k = top_k_features if isinstance(top_k_features, int) else 3
             anomalies_df = self.build_anomalies_dataframe(
                 anomaly_subset=anomaly_subset,
@@ -699,6 +811,18 @@ class SHAPAnomalyExplainer:
                 date_col=date_col,
                 top_k=k,
                 z_thresholds=z_score_thresholds
+            )
+            
+            # Tab 1: Summary (build AFTER to use real severity from anomalies_df)
+            summary_df = self.build_summary_dataframe(
+                anomaly_count=len(anomaly_indices),
+                total_samples=len(test_sequences),
+                date_range=date_range,
+                columns_analyzed=len(self.feature_names),
+                columns_with_anomalies=len(unique_features_in_anomalies),
+                top_features=top_3_features,
+                threshold=threshold,
+                anomalies_df=anomalies_df
             )
 
             # Tab 3: Feature Contribution
@@ -856,15 +980,16 @@ class SHAPAnomalyExplainer:
 
 
 results = explainer.generate_full_report(
-    test_sequences=test_sequences,           # Scaled test data sequences (n_samples, seq_length, n_features)
-    anomaly_flags=anomaly_flags,             # Boolean array marking which sequences are anomalies
-    normal_sequences=normal_sequences,       # Scaled normal/training sequences for baseline comparison
-    original_df=selected_features_df,        # Original unscaled DataFrame with date column for mapping
-    date_col='date',                         # Name of date/timestamp column in original_df
-    threshold=98,                            # Percentile threshold for normal range (95, 98, 99, etc.)
-    top_k_features=3,                        # Number of top contributing features to show per anomaly
-    output_dir='./shap_anomaly_reports',     # Directory to save Excel report
-    n_background=100,                        # Number of normal samples for SHAP baseline
-    max_anomalies=50,                        # Maximum number of anomalies to analyze (performance limit)
-    top_n_features=5                         # Top N features for global importance ranking
+    test_sequences=test_sequences,
+    anomaly_flags=anomaly_flags,
+    normal_sequences=normal_sequences,
+    original_df=selected_features_df,
+    date_col='date',
+    report_dates=['2025-10-01', '2025-10-05', '2025-10-10'],
+    top_k_features=3,
+    threshold=95,
+    output_dir='./shap_reports',
+    n_background=100,
+    max_anomalies=50,
+    top_n_features=5
 )
