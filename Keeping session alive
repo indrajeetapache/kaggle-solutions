@@ -3,3 +3,6 @@ ls -la /data/1/gcganamrswp/data/is44065/data/py39/lib/libstdc++.so*
 
 # Check what GLIBCXX versions it has
 strings /data/1/gcganamrswp/data/is44065/data/py39/lib/libstdc++.so.6 | grep GLIBCXX
+
+export LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib:$LD_LIBRARY_PATH
+/data/1/gcganamrswp/data/is44065/data/modele_env_py39/bin/python3 -c "import shap; print('Success!')"
