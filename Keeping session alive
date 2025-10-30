@@ -6,3 +6,20 @@ strings /data/1/gcganamrswp/data/is44065/data/py39/lib/libstdc++.so.6 | grep GLI
 
 export LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib:$LD_LIBRARY_PATH
 /data/1/gcganamrswp/data/is44065/data/modele_env_py39/bin/python3 -c "import shap; print('Success!')"
+
+pyspark3 \
+  --conf spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib \
+  --conf spark.yarn.appMasterEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib \
+  --conf spark.driverEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib \
+  --conf spark.port.maxRetries=50 \
+  --conf spark.ui.port=5089 \
+  --queue root.gfctocon
+
+
+import os
+
+# Set the library path BEFORE importing shap
+os.environ['LD_LIBRARY_PATH'] = '/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib:' + os.environ.get('LD_LIBRARY_PATH', '')
+
+# Now import shap
+import shap
