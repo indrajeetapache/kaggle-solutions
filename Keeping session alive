@@ -1,8 +1,5 @@
-export PYSPARK_DRIVER_PYTHON=`which python`
-export PYSPARK_PYTHON=./environment/bin/python
+# Check if libstdc++.so.6 exists in your conda env
+ls -la /data/1/gcganamrswp/data/is44065/data/py39/lib/libstdc++.so*
 
-pyspark \
-  --conf spark.yarn.appMasterEnv.PYSPARK_PYTHON=./environment/bin/python \
-  --master yarn \
-  --deploy-mode client \
-  --archives environment.tar.gz#environment
+# Check what GLIBCXX versions it has
+strings /data/1/gcganamrswp/data/is44065/data/py39/lib/libstdc++.so.6 | grep GLIBCXX
