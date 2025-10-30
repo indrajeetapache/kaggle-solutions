@@ -6,3 +6,6 @@ pyspark3 \
 
 export LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib:$LD_LIBRARY_PATH
 pyspark3 --conf "spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib"
+
+export LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib:$LD_LIBRARY_PATH
+pyspark3 --conf "spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib" --master local[*]
