@@ -34,5 +34,17 @@ exec /data/1/gcganamrswp/data/is44065/data/modele_env_py39/bin/python3 "$@"
 
 chmod +x python_wrapper.sh
 
+
+======
+
+export PYSPARK_PYTHON=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/bin/python3
+export PYTHONPATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib/python3.9/site-packages
+
+pyspark3 \
+  --conf "spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib" \
+  --conf "spark.yarn.appMasterEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib" \
+  --conf "spark.driverEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib" \
+  --queue root.gfctocon
+
 Then use it -- export PYSPARK_PYTHON=/path/to/python_wrapper.sh
 export PYTHONPATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib/python3.9/site-packages
