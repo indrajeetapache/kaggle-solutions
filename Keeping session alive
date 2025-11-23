@@ -108,3 +108,15 @@ results = detector.predict(test_df, date_col='load_date')
 import json
 with open('best_params.json', 'w') as f:
     json.dump(best_params, f)
+
+
+
+=======
+print(selected_train_df.isnull().sum().sum())
+print(np.isinf(selected_train_df.select_dtypes(include=[np.number])).sum().sum())
+
+
+=====
+
+numeric_cols = selected_train_df.select_dtypes(include=[np.number])
+   print(f"Constant features: {(numeric_cols.nunique() == 1).sum()}")
