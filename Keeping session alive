@@ -1,11 +1,110 @@
-pyspark3 \
-  --conf "spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib" \
-  --conf "spark.driverEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/modele_env_py39/lib" \
-  --queue root.gfctocon
+import optuna
+from optuna.pruners import MedianPruner
+from optuna.samplers import TPESampler
+import numpy as np
+import torch
+
+class OptunaLSTMOptimizer:
+    """Production-ready Optuna optimizer for LSTM Anomaly Detection."""
+    
+    def __init__(self, train_df, exclude_cols=['date']):
+        self.train_df = train_df
+        self.exclude_cols = exclude_cols
+        self.n_features = len([c for c in train_df.select_dtypes(include=[np.number]).columns 
+                               if c not in exclude_cols])
+    
+    def _get_search_space(self):
+        """
+        Production search space with validated ranges.
+        
+        Reasoning:
+        - seq_length: 45-90 days captures monthly/quarterly patterns
+        - hidden_size: 32-128 balanced for 1000+ features
+        - lr: 0.0005-0.005 proven range for LSTM time series
+        - dropout: 0.2-0.4 prevents overfitting without undertraining
+        """
+        if self.n_features > 1000:
+            # High-dimensional: conservative params
+            return {
+                'seq_length': [45, 60, 75, 90],
+                'hidden_size': [32, 48, 64],
+                'lr': [0.0005, 0.001, 0.002],
+                'dropout': [0.2, 0.3, 0.4]
+            }
+        else:
+            # Lower-dimensional: more flexible
+            return {
+                'seq_length': [45, 60, 90],
+                'hidden_size': [48, 64, 96, 128],
+                'lr': [0.0005, 0.001, 0.002, 0.005],
+                'dropout': [0.15, 0.2, 0.3]
+            }
+    
+    def objective(self, trial):
+        """Minimize validation reconstruction error."""
+        try:
+            space = self._get_search_space()
+            
+            params = {
+                'seq_length': trial.suggest_categorical('seq_length', space['seq_length']),
+                'hidden_size': trial.suggest_categorical('hidden_size', space['hidden_size']),
+                'lr': trial.suggest_categorical('lr', space['lr']),
+                'dropout': trial.suggest_categorical('dropout', space['dropout']),
+                'max_grad_norm': 1.0
+            }
+            
+            detector = LSTMAnomalyDetector(**params, exclude_cols=self.exclude_cols)
+            detector.fit(self.train_df, epochs=50, validation_split=0.2, verbose=False)
+            
+            score = detector.threshold
+            
+            del detector
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            return score
+            
+        except Exception:
+            return float('inf')
+    
+    def optimize(self, n_trials=20):
+        """
+        Run Bayesian optimization.
+        
+        Returns:
+            dict: Best hyperparameters ready for LSTMAnomalyDetector
+        """
+        study = optuna.create_study(
+            direction='minimize',
+            sampler=TPESampler(n_startup_trials=5, seed=42),
+            pruner=MedianPruner(n_startup_trials=3, n_warmup_steps=10)
+        )
+        
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        study.optimize(self.objective, n_trials=n_trials, show_progress_bar=True)
+        
+        print(f"\nOptimization complete. Best params: {study.best_params}")
+        print(f"Best validation threshold: {study.best_value:.6f}")
+        
+        return study.best_params
 
 
-export LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib:$LD_LIBRARY_PATH
-pyspark3 --conf "spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib"
+# ============================================================================
+# PRODUCTION USAGE
+# ============================================================================
 
-export LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib:$LD_LIBRARY_PATH
-pyspark3 --conf "spark.executorEnv.LD_LIBRARY_PATH=/data/1/gcganamrswp/data/is44065/data/py39/lib" --master local[*]
+# Find best params (one-time per dataset)
+optimizer = OptunaLSTMOptimizer(train_df, exclude_cols=['date'])
+best_params = optimizer.optimize(n_trials=20)
+
+# Train final model
+detector = LSTMAnomalyDetector(**best_params, exclude_cols=['date'])
+detector.fit(train_df, epochs=100)
+
+# Predict
+results = detector.predict(test_df, date_col='load_date')
+
+# Save params for reuse
+import json
+with open('best_params.json', 'w') as f:
+    json.dump(best_params, f)
