@@ -120,3 +120,30 @@ print(np.isinf(selected_train_df.select_dtypes(include=[np.number])).sum().sum()
 
 numeric_cols = selected_train_df.select_dtypes(include=[np.number])
    print(f"Constant features: {(numeric_cols.nunique() == 1).sum()}")
+numeric_cols = selected_train_df.select_dtypes(include=[np.number])
+   print(f"Constant features: {(numeric_cols.nunique() == 1).sum()}")
+
+==================
+# Add error visibility to optimizer
+def objective(self, trial):
+    try:
+        space = self._get_search_space()
+        params = {
+            'seq_length': trial.suggest_categorical('seq_length', space['seq_length']),
+            'hidden_size': trial.suggest_categorical('hidden_size', space['hidden_size']),
+            'lr': trial.suggest_categorical('lr', space['lr']),
+            'dropout': trial.suggest_categorical('dropout', space['dropout']),
+            'max_grad_norm': 1.0
+        }
+        
+        detector = LSTMAnomalyDetector(**params, exclude_cols=self.exclude_cols)
+        detector.fit(self.train_df, epochs=50, validation_split=0.2, verbose=False)
+        
+        score = detector.threshold
+        del detector
+        
+        return score
+        
+    except Exception as e:
+        print(f"Trial failed with params {trial.params}: {str(e)}")  # ADDED
+        return float('inf')
