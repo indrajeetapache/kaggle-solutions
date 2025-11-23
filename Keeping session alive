@@ -1,9 +1,3 @@
-import optuna
-from optuna.pruners import MedianPruner
-from optuna.samplers import TPESampler
-import numpy as np
-import torch
-
 class OptunaLSTMOptimizer:
     """Production-ready Optuna optimizer for LSTM Anomaly Detection."""
     
@@ -14,17 +8,8 @@ class OptunaLSTMOptimizer:
                                if c not in exclude_cols])
     
     def _get_search_space(self):
-        """
-        Production search space with validated ranges.
-        
-        Reasoning:
-        - seq_length: 45-90 days captures monthly/quarterly patterns
-        - hidden_size: 32-128 balanced for 1000+ features
-        - lr: 0.0005-0.005 proven range for LSTM time series
-        - dropout: 0.2-0.4 prevents overfitting without undertraining
-        """
+        """Production search space with validated ranges."""
         if self.n_features > 1000:
-            # High-dimensional: conservative params
             return {
                 'seq_length': [45, 60, 75, 90],
                 'hidden_size': [32, 48, 64],
@@ -32,7 +17,6 @@ class OptunaLSTMOptimizer:
                 'dropout': [0.2, 0.3, 0.4]
             }
         else:
-            # Lower-dimensional: more flexible
             return {
                 'seq_length': [45, 60, 90],
                 'hidden_size': [48, 64, 96, 128],
@@ -41,7 +25,7 @@ class OptunaLSTMOptimizer:
             }
     
     def objective(self, trial):
-        """Minimize validation reconstruction error."""
+        """Minimize validation reconstruction error with error logging."""
         try:
             space = self._get_search_space()
             
@@ -57,23 +41,19 @@ class OptunaLSTMOptimizer:
             detector.fit(self.train_df, epochs=50, validation_split=0.2, verbose=False)
             
             score = detector.threshold
-            
             del detector
+            
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             
             return score
             
-        except Exception:
+        except Exception as e:
+            print(f"Trial {trial.number} failed with params {trial.params}: {str(e)}")
             return float('inf')
     
     def optimize(self, n_trials=20):
-        """
-        Run Bayesian optimization.
-        
-        Returns:
-            dict: Best hyperparameters ready for LSTMAnomalyDetector
-        """
+        """Run Bayesian optimization."""
         study = optuna.create_study(
             direction='minimize',
             sampler=TPESampler(n_startup_trials=5, seed=42),
@@ -89,61 +69,6 @@ class OptunaLSTMOptimizer:
         return study.best_params
 
 
-# ============================================================================
-# PRODUCTION USAGE
-# ============================================================================
-
-# Find best params (one-time per dataset)
-optimizer = OptunaLSTMOptimizer(train_df, exclude_cols=['date'])
+# Usage (same as before)
+optimizer = OptunaLSTMOptimizer(selected_train_df, exclude_cols=['load_dt'])
 best_params = optimizer.optimize(n_trials=20)
-
-# Train final model
-detector = LSTMAnomalyDetector(**best_params, exclude_cols=['date'])
-detector.fit(train_df, epochs=100)
-
-# Predict
-results = detector.predict(test_df, date_col='load_date')
-
-# Save params for reuse
-import json
-with open('best_params.json', 'w') as f:
-    json.dump(best_params, f)
-
-
-
-=======
-print(selected_train_df.isnull().sum().sum())
-print(np.isinf(selected_train_df.select_dtypes(include=[np.number])).sum().sum())
-
-
-=====
-
-numeric_cols = selected_train_df.select_dtypes(include=[np.number])
-   print(f"Constant features: {(numeric_cols.nunique() == 1).sum()}")
-numeric_cols = selected_train_df.select_dtypes(include=[np.number])
-   print(f"Constant features: {(numeric_cols.nunique() == 1).sum()}")
-
-==================
-# Add error visibility to optimizer
-def objective(self, trial):
-    try:
-        space = self._get_search_space()
-        params = {
-            'seq_length': trial.suggest_categorical('seq_length', space['seq_length']),
-            'hidden_size': trial.suggest_categorical('hidden_size', space['hidden_size']),
-            'lr': trial.suggest_categorical('lr', space['lr']),
-            'dropout': trial.suggest_categorical('dropout', space['dropout']),
-            'max_grad_norm': 1.0
-        }
-        
-        detector = LSTMAnomalyDetector(**params, exclude_cols=self.exclude_cols)
-        detector.fit(self.train_df, epochs=50, validation_split=0.2, verbose=False)
-        
-        score = detector.threshold
-        del detector
-        
-        return score
-        
-    except Exception as e:
-        print(f"Trial failed with params {trial.params}: {str(e)}")  # ADDED
-        return float('inf')
