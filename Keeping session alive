@@ -1,10 +1,22 @@
 #!/bin/bash
 
-# Extract specific values
-dataset=$(yq '.prod.data.dataset_name' your-file.yaml)
-appname=$(yq '.prod.data.appname' your-file.yaml)
-env_name=$(yq '.prod.environment_name' your-file.yaml)
+# Method 1: Extract to variables
+read dataset appname env_name < <(python3 -c "
+import yaml
+with open('config.yaml') as f:
+    c = yaml.safe_load(f)
+    print(c['prod']['data']['dataset_name'])
+    print(c['prod']['data']['appname'])
+    print(c['prod']['environment_name'])
+" | tr '\n' ' ')
 
 echo "Dataset: $dataset"
 echo "App: $appname"
-echo "Environment: $env_name"
+
+# Method 2: Create helper function
+get_yaml() {
+    python3 -c "import yaml; print(yaml.safe_load(open('$1'))$2)"
+}
+
+# Usage
+value=$(get_yaml "config.yaml" "['prod']['data']['dataset_name']")
