@@ -1,22 +1,36 @@
-#!/bin/bash
+val_errors = np.array(val_errors)
 
-# Method 1: Extract to variables
-read dataset appname env_name < <(python3 -c "
-import yaml
-with open('config.yaml') as f:
-    c = yaml.safe_load(f)
-    print(c['prod']['data']['dataset_name'])
-    print(c['prod']['data']['appname'])
-    print(c['prod']['environment_name'])
-" | tr '\n' ' ')
+# Validate data quality
+if len(val_errors) == 0 or np.isnan(val_errors).any():
+    raise ValueError(
+        "Cannot calculate anomaly threshold - validation errors contain NaN.\n"
+        "Gradient clipping not working properly."
+    )
 
-echo "Dataset: $dataset"
-echo "App: $appname"
+# Calculate both thresholds
+percentile_threshold = np.percentile(val_errors, 99.5)
+mean_error = np.mean(val_errors)
+std_error = np.std(val_errors)
+sigma_threshold = mean_error + 3 * std_error
 
-# Method 2: Create helper function
-get_yaml() {
-    python3 -c "import yaml; print(yaml.safe_load(open('$1'))$2)"
-}
+# Take maximum (most conservative)
+self.threshold = max(percentile_threshold, sigma_threshold)
 
-# Usage
-value=$(get_yaml "config.yaml" "['prod']['data']['dataset_name']")
+# Safety check: Ensure threshold isn't unreasonably high
+# (Prevents sigma method from being too conservative due to outliers)
+median_error = np.median(val_errors)
+reasonable_max = median_error * 10  # 10x median is reasonable upper bound
+
+if self.threshold > reasonable_max:
+    print(f"  ⚠️  WARNING: Threshold ({self.threshold:.6f}) unusually high!")
+    print(f"  ⚠️  Using percentile-only ({percentile_threshold:.6f}) to avoid missing anomalies")
+    self.threshold = percentile_threshold
+
+print(f"\nThreshold calculation:")
+print(f"  - Mean error: {mean_error:.6f}")
+print(f"  - Std error: {std_error:.6f}")
+print(f"  - Median error: {median_error:.6f}")
+print(f"  - 99.5th percentile: {percentile_threshold:.6f}")
+print(f"  - Mean + 3σ: {sigma_threshold:.6f}")
+print(f"  - Selected threshold (max): {self.threshold:.6f}")
+print(f"  - Validation data flagged: {np.mean(val_errors > self.threshold)*100:.2f}%")
