@@ -1,25 +1,160 @@
-def check_executor_filesystem(x):
-    import os, sys
-    # 1. Get the current environment details
-    cwd = os.getcwd()
-    path_list = sys.path
-    
-    # 2. List all files and folders in the working directory
-    # We use recursion to see if the files are buried deep
-    all_items = []
-    for root, dirs, files in os.walk(cwd):
-        level = root.replace(cwd, '').count(os.sep)
-        indent = ' ' * 4 * (level)
-        all_items.append(f"{indent}{os.path.basename(root)}/")
-        sub_indent = ' ' * 4 * (level + 1)
-        for f in files[:5]: # Limit to 5 files per dir to keep logs clean
-            all_items.append(f"{sub_indent}{f}")
-            
-    return (f"--- EXECUTOR FS MAP ---\n"
-            f"CWD: {cwd}\n"
-            f"PYTHONPATH: {path_list}\n"
-            f"DIRECTORY STRUCTURE:\n" + "\n".join(all_items))
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, DateType, BooleanType
 
-# Trigger the check
-report = spark.range(1).rdd.map(check_executor_filesystem).collect()
-print(report[0])
+def generate_customer_dataset(num_records: int,
+                               database: str = "default",
+                               table_name: str = "dim_customers",
+                               mode: str = "overwrite"):
+    """
+    Generates a realistic customer dataset and saves it to a Hive table on Databricks.
+
+    Args:
+        num_records (int) : Number of records to generate (min: 1000)
+        database    (str) : Target Hive database name       [default: 'default']
+        table_name  (str) : Target Hive table name          [default: 'dim_customers']
+        mode        (str) : Save mode - overwrite / append  [default: 'overwrite']
+    """
+
+    if num_records < 1000:
+        raise ValueError(f"num_records must be at least 1000. Got: {num_records}")
+
+    spark = SparkSession.builder \
+        .appName("CustomerDatasetGenerator") \
+        .getOrCreate()
+
+    # ── Seed arrays (broadcast-friendly, used inside expr) ─────────────────────
+    first_names = [
+        "James","Mary","John","Patricia","Robert","Jennifer","Michael","Linda",
+        "William","Barbara","David","Susan","Richard","Jessica","Joseph","Sarah",
+        "Thomas","Karen","Charles","Lisa","Christopher","Nancy","Daniel","Betty",
+        "Matthew","Margaret","Anthony","Sandra","Mark","Ashley","Donald","Emily",
+        "Steven","Kimberly","Paul","Donna","Andrew","Carol","Joshua","Amanda",
+        "Kevin","Melissa","Brian","Deborah","George","Stephanie","Edward","Rebecca",
+        "Ronald","Sharon","Timothy","Laura","Jason","Cynthia","Jeffrey","Amy"
+    ]
+
+    last_names = [
+        "Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis",
+        "Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson",
+        "Thomas","Taylor","Moore","Jackson","Martin","Lee","Perez","Thompson","White",
+        "Harris","Sanchez","Clark","Ramirez","Lewis","Robinson","Walker","Young",
+        "Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores","Green",
+        "Adams","Nelson","Baker","Hall","Rivera","Campbell","Mitchell","Carter","Roberts"
+    ]
+
+    domains     = ["gmail.com","yahoo.com","outlook.com","hotmail.com","icloud.com","protonmail.com"]
+    countries   = ["USA","Canada","UK","Australia","Germany","France","India","Singapore","Brazil","Japan"]
+    cities      = ["New York","Los Angeles","Chicago","Houston","Phoenix","Toronto","London","Sydney",
+                   "Berlin","Paris","Mumbai","Singapore","São Paulo","Tokyo","Dubai","Amsterdam"]
+    segments    = ["Premium","Standard","Basic","Enterprise","Trial"]
+    genders     = ["Male","Female","Non-Binary","Prefer Not to Say"]
+    card_types  = ["Visa","Mastercard","Amex","Discover","PayPal"]
+    statuses    = ["Active","Inactive","Suspended","Pending"]
+
+    # Register arrays as SQL-accessible via spark config trick → use F.array() instead
+    fn_arr      = F.array([F.lit(x) for x in first_names])
+    ln_arr      = F.array([F.lit(x) for x in last_names])
+    domain_arr  = F.array([F.lit(x) for x in domains])
+    country_arr = F.array([F.lit(x) for x in countries])
+    city_arr    = F.array([F.lit(x) for x in cities])
+    segment_arr = F.array([F.lit(x) for x in segments])
+    gender_arr  = F.array([F.lit(x) for x in genders])
+    card_arr    = F.array([F.lit(x) for x in card_types])
+    status_arr  = F.array([F.lit(x) for x in statuses])
+
+    def rand_pick(arr):
+        """Pick a random element from a Spark array column expression."""
+        return arr[F.floor(F.rand() * F.size(arr)).cast(IntegerType())]
+
+    # ── Build DataFrame using range (most efficient for large data on Databricks) ─
+    df = (
+        spark.range(1, num_records + 1)                         # customer_id: 1 … N
+        .withColumnRenamed("id", "customer_id")
+
+        # Name fields
+        .withColumn("first_name",   rand_pick(fn_arr))
+        .withColumn("last_name",    rand_pick(ln_arr))
+        .withColumn("full_name",    F.concat_ws(" ", "first_name", "last_name"))
+
+        # Contact
+        .withColumn("email",
+            F.concat_ws("",
+                F.lower("first_name"), F.lit("."), F.lower("last_name"),
+                F.lit("_"), (F.rand() * 999 + 1).cast(IntegerType()).cast(StringType()),
+                F.lit("@"), rand_pick(domain_arr)
+            )
+        )
+        .withColumn("phone_number",
+            F.concat_ws("-",
+                (F.rand() * 899 + 100).cast(IntegerType()).cast(StringType()),
+                (F.rand() * 899 + 100).cast(IntegerType()).cast(StringType()),
+                (F.rand() * 8999 + 1000).cast(IntegerType()).cast(StringType())
+            )
+        )
+
+        # Demographics
+        .withColumn("gender",       rand_pick(gender_arr))
+        .withColumn("age",          (F.rand() * 57 + 18).cast(IntegerType()))  # 18–74
+        .withColumn("date_of_birth",
+            F.date_sub(F.current_date(), (F.col("age") * 365 + F.rand() * 364).cast(IntegerType()))
+        )
+
+        # Geography
+        .withColumn("country",      rand_pick(country_arr))
+        .withColumn("city",         rand_pick(city_arr))
+        .withColumn("zip_code",
+            F.lpad((F.rand() * 89999 + 10000).cast(IntegerType()).cast(StringType()), 5, "0")
+        )
+
+        # Account
+        .withColumn("customer_segment",  rand_pick(segment_arr))
+        .withColumn("account_status",    rand_pick(status_arr))
+        .withColumn("registration_date",
+            F.date_sub(F.current_date(), (F.rand() * 3650).cast(IntegerType()))   # within last 10 yrs
+        )
+        .withColumn("last_login_date",
+            F.date_sub(F.current_date(), (F.rand() * 365).cast(IntegerType()))
+        )
+        .withColumn("is_email_verified",  (F.rand() > 0.2).cast(BooleanType()))   # 80% verified
+        .withColumn("is_sms_opt_in",      (F.rand() > 0.5).cast(BooleanType()))
+
+        # Financials
+        .withColumn("annual_income",        F.round(F.rand() * 190000 + 20000, 2))   # $20k–$210k
+        .withColumn("credit_score",         (F.rand() * 550 + 300).cast(IntegerType()))  # 300–850
+        .withColumn("total_orders",         (F.rand() * 200).cast(IntegerType()))
+        .withColumn("total_spend_usd",      F.round(F.rand() * 49900 + 100, 2))      # $100–$50k
+        .withColumn("avg_order_value_usd",
+            F.round(F.when(F.col("total_orders") > 0,
+                           F.col("total_spend_usd") / F.col("total_orders"))
+                    .otherwise(0), 2)
+        )
+        .withColumn("preferred_payment",    rand_pick(card_arr))
+        .withColumn("loyalty_points",       (F.rand() * 10000).cast(IntegerType()))
+
+        # Metadata
+        .withColumn("created_at",  F.current_timestamp())
+        .withColumn("updated_at",  F.current_timestamp())
+    )
+
+    # ── Save to Hive ────────────────────────────────────────────────────────────
+    spark.sql(f"CREATE DATABASE IF NOT EXISTS {database}")
+
+    (
+        df.write
+        .format("delta")           # Delta Lake — best practice on Databricks
+        .mode(mode)
+        .option("overwriteSchema", "true")
+        .saveAsTable(f"{database}.{table_name}")
+    )
+
+    count = spark.table(f"{database}.{table_name}").count()
+    print(f"✅ Successfully saved {count:,} records → {database}.{table_name}")
+    spark.table(f"{database}.{table_name}").printSchema()
+
+
+# ── Usage ───────────────────────────────────────────────────────────────────────
+generate_customer_dataset(num_records=5000)
+
+# Custom DB / table / append mode
+# generate_customer_dataset(num_records=10000, database="marketing", table_name="dim_customers", mode="overwrite")
