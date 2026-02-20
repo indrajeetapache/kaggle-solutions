@@ -1,109 +1,165 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, rand, count
-from pyspark.sql.types import *
+from pyspark.sql.functions import *
 import time
 
+# ══════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ══════════════════════════════════════════════════════════════
+NUM_ROWS = 8_000_000
+DATABASE = "test_db"                    # Change to your database
+TABLE_NAME = "transactions_8m"
+FULL_TABLE = f"{DATABASE}.{TABLE_NAME}"
+
+# ══════════════════════════════════════════════════════════════
+# INITIALIZE SPARK
+# ══════════════════════════════════════════════════════════════
 spark = SparkSession.builder \
-    .appName("AQE_Skew_Test_Synthetic") \
+    .appName("8M_Row_Benchmark") \
+    .enableHiveSupport() \
     .getOrCreate()
 
+# Create database if not exists
+spark.sql(f"CREATE DATABASE IF NOT EXISTS {DATABASE}")
+spark.sql(f"USE {DATABASE}")
+
+print("=" * 70)
+print("STEP 1: GENERATE 8 MILLION ROWS")
+print("=" * 70)
+
+start_gen = time.time()
+
+# Generate 8M rows
+df = spark.range(0, NUM_ROWS, numPartitions=80) \
+    .withColumn("transaction_id", col("id")) \
+    .withColumn("customer_id", (rand() * 1_000_000).cast("bigint")) \
+    .withColumn("product_id", (rand() * 10_000).cast("int")) \
+    .withColumn("store_id", (rand() * 500).cast("int")) \
+    .withColumn("transaction_date", date_add(lit("2024-01-01"), (rand() * 365).cast("int"))) \
+    .withColumn("quantity", (rand() * 10 + 1).cast("int")) \
+    .withColumn("unit_price", (rand() * 500 + 10).cast("decimal(10,2)")) \
+    .withColumn("total_amount", col("quantity") * col("unit_price")) \
+    .withColumn("payment_method", 
+        when(rand() < 0.4, "CREDIT_CARD")
+        .when(rand() < 0.7, "DEBIT_CARD")
+        .when(rand() < 0.9, "CASH")
+        .otherwise("UPI")) \
+    .withColumn("status", 
+        when(rand() < 0.95, "COMPLETED").otherwise("CANCELLED")) \
+    .withColumn("region", 
+        when(rand() < 0.25, "NORTH")
+        .when(rand() < 0.50, "SOUTH")
+        .when(rand() < 0.75, "EAST")
+        .otherwise("WEST")) \
+    .drop("id")
+
+# Write to Hive table (partitioned by transaction_date)
+df.write \
+    .mode("overwrite") \
+    .format("parquet") \
+    .partitionBy("transaction_date") \
+    .saveAsTable(FULL_TABLE)
+
+gen_time = time.time() - start_gen
+print(f"\n✓ Data written to table: {FULL_TABLE}")
+print(f"✓ Time taken: {gen_time:.2f} seconds")
+
 # ══════════════════════════════════════════════════════════════
-# CREATE SKEWED TEST DATA
+# STEP 2: VERIFY DATA
 # ══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("STEP 2: VERIFY DATA")
+print("=" * 70)
 
-print("=== Creating synthetic skewed dataset ===")
+row_count = spark.sql(f"SELECT COUNT(*) FROM {FULL_TABLE}").collect()[0][0]
+print(f"\n✓ Row count: {row_count:,}")
 
-# Create a SKEWED fact table (10M rows)
-# 70% of data goes to customer_id = 1 (the skewed key)
-df_fact = spark.range(0, 10_000_000) \
-    .withColumn("customer_id", 
-        when(rand() < 0.7, 1)  # 70% → customer_id = 1 (SKEW!)
-        .otherwise((rand() * 999 + 2).cast("int"))  # 30% → random ids 2-1000
-    ) \
-    .withColumn("order_id", col("id")) \
-    .withColumn("amount", (rand() * 1000).cast("decimal(10,2)")) \
-    .select("order_id", "customer_id", "amount")
+# Show table info
+spark.sql(f"DESCRIBE EXTENDED {FULL_TABLE}").show(50, truncate=False)
 
-# Create dimension table (1000 customers)
-df_dim = spark.range(1, 1001) \
+# Show sample data
+print("\nSample data:")
+spark.sql(f"SELECT * FROM {FULL_TABLE} LIMIT 5").show(truncate=False)
+
+# Show partition count
+partition_count = spark.sql(f"SHOW PARTITIONS {FULL_TABLE}").count()
+print(f"\n✓ Partitions: {partition_count}")
+
+# ══════════════════════════════════════════════════════════════
+# STEP 3: RUN BENCHMARK JOB
+# ══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("STEP 3: BENCHMARK JOB (Aggregation + Join)")
+print("=" * 70)
+
+start_job = time.time()
+
+# Create temporary customer dimension table
+df_customers = spark.range(0, 1_000_000) \
     .withColumnRenamed("id", "customer_id") \
-    .withColumn("customer_name", concat(lit("Customer_"), col("customer_id"))) \
-    .withColumn("region", (rand() * 5).cast("int"))
+    .withColumn("customer_segment", 
+        when(rand() < 0.3, "PREMIUM")
+        .when(rand() < 0.7, "STANDARD")
+        .otherwise("BASIC"))
 
-# Verify skew
-print("\n=== Verifying skew ===")
-df_fact.groupBy("customer_id").agg(count("*").alias("cnt")) \
-    .orderBy(col("cnt").desc()).limit(5).show()
-# You should see customer_id=1 with ~7M rows, others with <10K
+df_customers.createOrReplaceTempView("customers_temp")
 
-# ══════════════════════════════════════════════════════════════
-# TEST WITHOUT AQE
-# ══════════════════════════════════════════════════════════════
+# Benchmark SQL query
+result = spark.sql(f"""
+    WITH aggregated AS (
+        SELECT 
+            customer_id,
+            region,
+            payment_method,
+            SUM(total_amount) as total_spent,
+            COUNT(transaction_id) as txn_count
+        FROM {FULL_TABLE}
+        WHERE status = 'COMPLETED'
+        GROUP BY customer_id, region, payment_method
+    )
+    SELECT 
+        a.region,
+        c.customer_segment,
+        a.payment_method,
+        SUM(a.total_spent) as revenue,
+        SUM(a.txn_count) as transactions,
+        COUNT(DISTINCT a.customer_id) as customers
+    FROM aggregated a
+    JOIN customers_temp c ON a.customer_id = c.customer_id
+    GROUP BY a.region, c.customer_segment, a.payment_method
+    ORDER BY revenue DESC
+""")
 
-print("\n=== RUN 1: WITHOUT AQE ===")
-spark.conf.set("spark.sql.adaptive.enabled", "false")
+# Trigger execution
+output_rows = result.count()
+result.show(20, truncate=False)
 
-start = time.time()
-result_no_aqe = df_fact.join(df_dim, "customer_id", "inner") \
-    .groupBy("region").agg({"amount": "sum"})
-result_no_aqe.write.mode("overwrite").format("noop").save()
-time_no_aqe = time.time() - start
-
-print(f"Time WITHOUT AQE: {time_no_aqe:.2f}s")
-
-# ══════════════════════════════════════════════════════════════
-# TEST WITH AQE
-# ══════════════════════════════════════════════════════════════
-
-print("\n=== RUN 2: WITH AQE ===")
-spark.conf.set("spark.sql.adaptive.enabled", "true")
-spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
-spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionFactor", "5")
-spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "256MB")
-
-start = time.time()
-result_aqe = df_fact.join(df_dim, "customer_id", "inner") \
-    .groupBy("region").agg({"amount": "sum"})
-result_aqe.write.mode("overwrite").format("noop").save()
-time_aqe = time.time() - start
-
-print(f"Time WITH AQE: {time_aqe:.2f}s")
-print(f"Improvement: {((time_no_aqe - time_aqe) / time_no_aqe * 100):.1f}%")
+job_time = time.time() - start_job
 
 # ══════════════════════════════════════════════════════════════
-# VALIDATION
+# STEP 4: RESULTS
 # ══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("BENCHMARK RESULTS")
+print("=" * 70)
+print(f"Platform:        {spark.sparkContext.master}")
+print(f"Table:           {FULL_TABLE}")
+print(f"Input Rows:      {row_count:,}")
+print(f"Output Rows:     {output_rows:,}")
+print(f"Job Time:        {job_time:.2f} seconds ({job_time/60:.2f} minutes)")
+print("=" * 70)
 
 print(f"""
-╔══════════════════════════════════════════════════════════╗
-║                  TEST RESULTS                            ║
-╠══════════════════════════════════════════════════════════╣
-║  WITHOUT AQE: {time_no_aqe:6.2f}s                                    ║
-║  WITH AQE:    {time_aqe:6.2f}s                                    ║
-║  Speedup:     {time_no_aqe/time_aqe:5.2f}x                                    ║
-╚══════════════════════════════════════════════════════════╝
+NEXT STEPS:
+1. Check Spark UI for detailed metrics
+2. Run same script on Databricks (change DATABASE name if needed)
+3. Compare job_time between platforms
 
-NEXT STEPS - Validate in Spark UI:
-1. Open Spark UI → SQL tab
-2. Find the two query executions
-3. Click on the join stage
-
-WITHOUT AQE - You should see:
-  • One task processing 7M rows (customer_id=1)
-  • Other tasks processing <10K rows
-  • Max task duration: 120s (example)
-  • Median task duration: 8s
-  • Ratio: 15x skew!
-
-WITH AQE - You should see:
-  • Skewed partition (customer_id=1) split into 10+ sub-tasks
-  • More uniform task distribution
-  • Max task duration: 20s
-  • Median: 8s
-  • Ratio: 2.5x (much better!)
-
-✓ PASS if: AQE run is faster AND Spark UI shows skew handling
-✗ FAIL if: No improvement or skew still visible in task metrics
+TABLE INFO:
+- Database: {DATABASE}
+- Table: {TABLE_NAME}
+- Format: Parquet
+- Partitions: {partition_count} (by transaction_date)
+- Expected size: ~240 MB
 """)
 
 spark.stop()
