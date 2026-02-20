@@ -1,1 +1,109 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when, rand, count
+from pyspark.sql.types import *
+import time
 
+spark = SparkSession.builder \
+    .appName("AQE_Skew_Test_Synthetic") \
+    .getOrCreate()
+
+# ══════════════════════════════════════════════════════════════
+# CREATE SKEWED TEST DATA
+# ══════════════════════════════════════════════════════════════
+
+print("=== Creating synthetic skewed dataset ===")
+
+# Create a SKEWED fact table (10M rows)
+# 70% of data goes to customer_id = 1 (the skewed key)
+df_fact = spark.range(0, 10_000_000) \
+    .withColumn("customer_id", 
+        when(rand() < 0.7, 1)  # 70% → customer_id = 1 (SKEW!)
+        .otherwise((rand() * 999 + 2).cast("int"))  # 30% → random ids 2-1000
+    ) \
+    .withColumn("order_id", col("id")) \
+    .withColumn("amount", (rand() * 1000).cast("decimal(10,2)")) \
+    .select("order_id", "customer_id", "amount")
+
+# Create dimension table (1000 customers)
+df_dim = spark.range(1, 1001) \
+    .withColumnRenamed("id", "customer_id") \
+    .withColumn("customer_name", concat(lit("Customer_"), col("customer_id"))) \
+    .withColumn("region", (rand() * 5).cast("int"))
+
+# Verify skew
+print("\n=== Verifying skew ===")
+df_fact.groupBy("customer_id").agg(count("*").alias("cnt")) \
+    .orderBy(col("cnt").desc()).limit(5).show()
+# You should see customer_id=1 with ~7M rows, others with <10K
+
+# ══════════════════════════════════════════════════════════════
+# TEST WITHOUT AQE
+# ══════════════════════════════════════════════════════════════
+
+print("\n=== RUN 1: WITHOUT AQE ===")
+spark.conf.set("spark.sql.adaptive.enabled", "false")
+
+start = time.time()
+result_no_aqe = df_fact.join(df_dim, "customer_id", "inner") \
+    .groupBy("region").agg({"amount": "sum"})
+result_no_aqe.write.mode("overwrite").format("noop").save()
+time_no_aqe = time.time() - start
+
+print(f"Time WITHOUT AQE: {time_no_aqe:.2f}s")
+
+# ══════════════════════════════════════════════════════════════
+# TEST WITH AQE
+# ══════════════════════════════════════════════════════════════
+
+print("\n=== RUN 2: WITH AQE ===")
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionFactor", "5")
+spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "256MB")
+
+start = time.time()
+result_aqe = df_fact.join(df_dim, "customer_id", "inner") \
+    .groupBy("region").agg({"amount": "sum"})
+result_aqe.write.mode("overwrite").format("noop").save()
+time_aqe = time.time() - start
+
+print(f"Time WITH AQE: {time_aqe:.2f}s")
+print(f"Improvement: {((time_no_aqe - time_aqe) / time_no_aqe * 100):.1f}%")
+
+# ══════════════════════════════════════════════════════════════
+# VALIDATION
+# ══════════════════════════════════════════════════════════════
+
+print(f"""
+╔══════════════════════════════════════════════════════════╗
+║                  TEST RESULTS                            ║
+╠══════════════════════════════════════════════════════════╣
+║  WITHOUT AQE: {time_no_aqe:6.2f}s                                    ║
+║  WITH AQE:    {time_aqe:6.2f}s                                    ║
+║  Speedup:     {time_no_aqe/time_aqe:5.2f}x                                    ║
+╚══════════════════════════════════════════════════════════╝
+
+NEXT STEPS - Validate in Spark UI:
+1. Open Spark UI → SQL tab
+2. Find the two query executions
+3. Click on the join stage
+
+WITHOUT AQE - You should see:
+  • One task processing 7M rows (customer_id=1)
+  • Other tasks processing <10K rows
+  • Max task duration: 120s (example)
+  • Median task duration: 8s
+  • Ratio: 15x skew!
+
+WITH AQE - You should see:
+  • Skewed partition (customer_id=1) split into 10+ sub-tasks
+  • More uniform task distribution
+  • Max task duration: 20s
+  • Median: 8s
+  • Ratio: 2.5x (much better!)
+
+✓ PASS if: AQE run is faster AND Spark UI shows skew handling
+✗ FAIL if: No improvement or skew still visible in task metrics
+""")
+
+spark.stop()
