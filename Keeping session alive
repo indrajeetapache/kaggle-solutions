@@ -1,15 +1,1 @@
 
-val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
-val fileSizeBytes: Long = fs.getContentSummary(new Path(filepath)).getLength
-val targetPartitionSizeBytes: Long = 64L * 1024 * 1024
-val derivedPartitions: Int = math.ceil(fileSizeBytes.toDouble / targetPartitionSizeBytes).toInt
-val totalCores: Int = spark.sparkContext.defaultParallelism  // = 100 on your cluster
-val numOfOutputPartitions: Int = math.min(
-  math.max(derivedPartitions, totalCores),
-  totalCores * 5
-)
-// numOfOutputPartitions = max(14, 100) = 100
-
-logger.info(s"totalCores=$totalCores | derivedPartitions=$derivedPartitions | finalPartitions=$numOfOutputPartitions")
-
-setFileInputFormatSplitSize(filepath, numOfOutputPartitions)  // passes 100
