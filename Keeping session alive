@@ -12,3 +12,26 @@ logger.info(s"""
   ─────────────────────────────────────────
   finalPartitions         : $numOfOutputPartitions
 """)
+
+
+val fileSizeBytes: Long               = fs.getContentSummary(new Path(filepath)).getLength
+// FLOOR anchor: data-driven partition size (64MB target)
+val derivedPartitions: Int            = math.ceil(fileSizeBytes.toDouble / (64L * 1024 * 1024)).toInt
+// CEILING anchor: derived from minimum viable task size
+// XML Xerces parser init + task scheduling overhead ≈ meaningful
+// below 10MB per task, overhead dominates actual parsing work
+// so minimum task size = 10MB → maximum tasks = fileSizeBytes / 10MB
+val maxMeaningfulPartitions: Int      = math.ceil(fileSizeBytes.toDouble / (10L * 1024 * 1024)).toInt
+val totalCores: Int                   = spark.sparkContext.defaultParallelism
+val numOfOutputPartitions: Int        = math.min(
+  math.max(derivedPartitions, totalCores),  // FLOOR: never idle a core
+  maxMeaningfulPartitions                    // CEILING: never create pointless tiny tasks
+)
+logger.info(s"""
+  fileSizeMB              : ${fileSizeBytes / (1024 * 1024)} MB
+  targetPartitionSizeBytes: 64 MB  → derivedPartitions = $derivedPartitions
+  minTaskSizeBytes        : 10 MB  → maxMeaningfulPartitions = $maxMeaningfulPartitions
+  totalCores              : $totalCores
+  ─────────────────────────────────────────
+  finalPartitions         : $numOfOutputPartitions
+""")
