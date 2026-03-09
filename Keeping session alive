@@ -1,3 +1,1 @@
-select count(*) 
-from D_PBWM_DEV_176012_AWSSFK_STG_43448_AR.IBS_T_SCH.AR_BARS_BARS0130_SCYCHDR 
-where audit_load_ts >= to_date('20250520', 'YYYYMMDD')
+
