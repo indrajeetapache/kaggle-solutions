@@ -1,1 +1,1 @@
-hdfs dfs -cat /data/file.gz | gzip -d | hdfs dfs -put - /data/output_file
+" ... where audit_load_ts >= to_date('" + snapshot_dt + "', 'YYYYMMDD') ... "
