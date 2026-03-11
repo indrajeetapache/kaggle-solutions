@@ -1,1 +1,87 @@
+val rejoinedRdd = sc.binaryFiles(filepath)
+  .flatMap { case (_, portableStream) =>
+    val stream       = portableStream.open()
+    val reader       = new java.io.BufferedReader(
+                         new java.io.InputStreamReader(stream, "UTF-8"))
+    val result       = scala.collection.mutable.ArrayBuffer[String]()
+    val sb           = new StringBuilder
+    val expectedSeps = datacols - 1   // 24 for your 25 col schema
+    val SEP          = '~'
+    val QUOTE        = '"'
 
+    // ── Quote-aware separator counter ─────────────────────────
+    def countSeps(l: String): Int = {
+      var count = 0; var inQ = false; var i = 0
+      while (i < l.length) {
+        val ch = l.charAt(i)
+        if      (ch == QUOTE)           inQ = !inQ
+        else if (ch == SEP && !inQ)     count += 1
+        i += 1
+      }
+      count
+    }
+
+    def isComplete(l: String) =
+      countSeps(l) >= expectedSeps
+
+    // ── KEY FIX: partial data record must start with quote ────
+    // Header/footer with some ~ chars will NOT start with "
+    // Only genuine split data records start with "
+    def isPartialDataRecord(l: String) = {
+      val s = countSeps(l)
+      s > 0 && s < expectedSeps && l.startsWith("\"")
+    }
+
+    // ── Stream file line by line ───────────────────────────────
+    var line = reader.readLine()
+    while (line != null) {
+      if (line.trim.isEmpty) {
+        // Empty line — flush buffer if any
+        if (sb.nonEmpty) { result += sb.toString(); sb.clear() }
+
+      } else if (sb.isEmpty) {
+        if      (isComplete(line))           result += line         // complete record
+        else if (isPartialDataRecord(line))  sb.append(line)        // split — start buffer
+        else                                 result += line         // header/footer
+
+      } else {
+        // Have partial record — append continuation
+        sb.append("\n").append(line)    // \n preserves original data ✅
+        if (isComplete(sb.toString())) {
+          result += sb.toString()
+          sb.clear()
+        }
+      }
+      line = reader.readLine()
+    }
+
+    if (sb.nonEmpty) result += sb.toString()
+    reader.close()
+    stream.close()
+    result.iterator
+  }
+  .cache()
+
+// ── YOUR EXISTING CODE — ZERO CHANGES ─────────────────────────
+val count       = rejoinedRdd.count()
+val footerLines = count - ignoreFooterLines
+
+var rdd = rejoinedRdd
+  .zipWithIndex()
+  .filter(row => row._2 > ignoreHeaderLines && row._2 < footerLines)
+  .keys
+
+if (sep.length > 1 && spark.version.startsWith("2") && isMultiDelimiter)
+  rdd = rdd.map(line => line.replaceAll(sep, optionsMap("sep")))
+
+val ds = rdd.toDS()
+var df = spark.read
+  .options(optionsMap)
+  .schema(dfSchema.add(corruptColumn))
+  .option("columnNameOfCorruptRecord", "_corrupt_record")
+  .csv(ds)
+  .withColumn("source_file_name",
+      substring_index(input_file_name(), "/", -1))
+  .withColumn("source_file_name_with_path", input_file_name())
+
+rejoinedRdd.unpersist()
