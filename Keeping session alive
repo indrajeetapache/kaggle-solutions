@@ -1,80 +1,168 @@
+/**
+ * MULTILINE RECORD REJOIN LOGIC
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Problem  : sc.textFile() splits on every \n blindly. If a field VALUE
+ *            contains a raw newline (e.g. "SYST\nEM"), the record is split
+ *            into two incomplete lines and spark.read.csv cannot rejoin them
+ *            even with multiLine=true because the damage is done before
+ *            spark.read.csv sees the data.
+ *
+ * Solution : sc.binaryFiles() reads the file as a single stream per file.
+ *            We control splitting using reader.readLine() and rejoin split
+ *            records by counting real separators (quote-aware) before passing
+ *            clean logical records to the existing zipWithIndex pipeline.
+ *
+ * Works for:
+ *   ✅ Normal single-line records     — emitted immediately
+ *   ✅ Multiline split records        — buffered and rejoined
+ *   ✅ Header / footer lines          — passed through as-is
+ *   ✅ Separator (~) inside quotes    — ignored by quote-aware counter
+ *   ✅ Empty lines in file            — buffer flushed safely
+ *   ✅ Records split across 3+ lines  — keeps buffering until complete
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+// ── Config values — all from your existing variables, nothing hardcoded ──────
+val sepChar      : Char   = optionsMap("sep").charAt(0)    // '~'  from optionsMap
+val quoteChar    : Char   = optionsMap("quote").charAt(0)  // '"'  from optionsMap
+val fileEncoding : String = encoding                       // "UTF-8" from val encoding
+val expectedSeps : Int    = datacols - 1                   // 24 for 25-col schema
+
+// ── Step 1: Read file as binary stream — no premature \n splitting ────────────
+// sc.binaryFiles reads the entire file as a PortableDataStream per file.
+// portableStream.open() returns a DataInputStream — truly streamed in chunks,
+// never fully loaded into memory at once (BufferedReader reads 8KB at a time).
+// This eliminates the partition boundary problem that sc.textFile has.
 val rejoinedRdd = sc.binaryFiles(filepath)
   .flatMap { case (_, portableStream) =>
-    val stream       = portableStream.open()
-    val reader       = new java.io.BufferedReader(
-                         new java.io.InputStreamReader(stream, "UTF-8"))
-    val result       = scala.collection.mutable.ArrayBuffer[String]()
-    val sb           = new StringBuilder
-    val expectedSeps = datacols - 1   // 24 for your 25 col schema
-    val SEP          = '~'
-    val QUOTE        = '"'
 
-    // ── Quote-aware separator counter ─────────────────────────
-    def countSeps(l: String): Int = {
-      var count = 0; var inQ = false; var i = 0
-      while (i < l.length) {
-        val ch = l.charAt(i)
-        if      (ch == QUOTE)           inQ = !inQ
-        else if (ch == SEP && !inQ)     count += 1
+    // Wrap binary stream as UTF-8 text reader — streaming, not fully in memory
+    val stream = portableStream.open()
+    val reader = new java.io.BufferedReader(
+                   new java.io.InputStreamReader(stream, fileEncoding))
+
+    val result = scala.collection.mutable.ArrayBuffer[String]()
+    val sb     = new StringBuilder   // buffer for accumulating split record parts
+
+    // ── Quote-aware separator counter ──────────────────────────────────────────
+    // Counts only separators that are OUTSIDE quoted fields.
+    // Example: "A"~"value~with~tilde"~"B" → counts 2 seps, not 4
+    // Without this, a ~ inside a field value would be mistaken for a delimiter
+    // and cause premature record completion → data corruption.
+    def countSeps(line: String): Int = {
+      var count   = 0
+      var inQuote = false
+      var i       = 0
+      while (i < line.length) {
+        val ch = line.charAt(i)
+        if      (ch == quoteChar && !inQuote) inQuote = true   // opening quote
+        else if (ch == quoteChar &&  inQuote) inQuote = false  // closing quote
+        else if (ch == sepChar   && !inQuote) count  += 1      // real separator
         i += 1
       }
       count
     }
 
-    def isComplete(l: String) =
-      countSeps(l) >= expectedSeps
+    // ── Record state helpers ────────────────────────────────────────────────────
 
-    // ── KEY FIX: partial data record must start with quote ────
-    // Header/footer with some ~ chars will NOT start with "
-    // Only genuine split data records start with "
-    def isPartialDataRecord(l: String) = {
-      val s = countSeps(l)
-      s > 0 && s < expectedSeps && l.startsWith("\"")
+    // A complete record has all expected separators
+    def isComplete(line: String): Boolean =
+      countSeps(line) >= expectedSeps
+
+    // A partial data record is a genuine split data record — it:
+    //   1. Has SOME separators (not zero — rules out header/footer)
+    //   2. Has FEWER than expected (incomplete — needs next line)
+    //   3. Starts with quote char (all your data records start with ")
+    //      This is the KEY guard — headers like "HEADER~WITH~SEPS"
+    //      have some ~ but do NOT start with " so they are never buffered
+    def isPartialDataRecord(line: String): Boolean = {
+      val s = countSeps(line)
+      s > 0 && s < expectedSeps && line.startsWith(quoteChar.toString)
     }
 
-    // ── Stream file line by line ───────────────────────────────
-    var line = reader.readLine()
+    // ── Main line-by-line processing loop ──────────────────────────────────────
+    var line = reader.readLine()    // BufferedReader reads 8KB chunks from HDFS
+
     while (line != null) {
+
       if (line.trim.isEmpty) {
-        // Empty line — flush buffer if any
+        // Empty line — if we have a partial record buffered flush it,
+        // then discard the empty line (don't add to result)
         if (sb.nonEmpty) { result += sb.toString(); sb.clear() }
 
       } else if (sb.isEmpty) {
-        if      (isComplete(line))           result += line         // complete record
-        else if (isPartialDataRecord(line))  sb.append(line)        // split — start buffer
-        else                                 result += line         // header/footer
+        // Nothing buffered yet — decide what this line is:
+        if (isComplete(line)) {
+          // Normal complete record — emit immediately, no buffering needed
+          result += line
+
+        } else if (isPartialDataRecord(line)) {
+          // First fragment of a split record — start buffering
+          // Do NOT emit yet — more lines needed to complete this record
+          sb.append(line)
+
+        } else {
+          // Zero separators OR does not start with quote
+          // → header line, footer line, or non-data line
+          // → emit as-is so zipWithIndex can handle header/footer removal
+          result += line
+        }
 
       } else {
-        // Have partial record — append continuation
-        sb.append("\n").append(line)    // \n preserves original data ✅
+        // We have a partial record in buffer — this line is a continuation.
+        // Append with \n (not space) to preserve the EXACT original field value.
+        // Replacing \n with space would modify data: "SYST\nEM" → "SYST EM" ❌
+        // Keeping \n: "SYST\nEM" stays intact, multiLine=true handles it downstream ✅
+        sb.append("\n").append(line)
+
+        // Check if the buffer is now a complete record
         if (isComplete(sb.toString())) {
           result += sb.toString()
           sb.clear()
         }
+        // If still not complete — keep buffering (handles 3+ line splits)
       }
-      line = reader.readLine()
+
+      line = reader.readLine()    // advance to next line
     }
 
-    if (sb.nonEmpty) result += sb.toString()
+    // ── Safety flush — handles malformed last record if any ───────────────────
+    if (sb.nonEmpty) { result += sb.toString(); sb.clear() }
+
+    // ── Explicit resource cleanup — Spark does not manage these handles ────────
+    // Without this: file handle leak on executor → OOM on large pipelines
     reader.close()
     stream.close()
-    result.iterator
-  }
-  .cache()
 
-// ── YOUR EXISTING CODE — ZERO CHANGES ─────────────────────────
+    result.iterator   // emit all rejoined records as RDD elements
+  }
+  .cache()    // cache here — count() and zipWithIndex() both consume this RDD
+              // without cache: file read + rejoin runs TWICE (double I/O) ❌
+              // with cache:    file read + rejoin runs ONCE, result reused ✅
+
+// ── Step 2: Your existing code — ZERO changes from here ──────────────────────
+
+// count() uses cache — no recomputation
 val count       = rejoinedRdd.count()
 val footerLines = count - ignoreFooterLines
 
+// zipWithIndex uses cache — no recomputation
+// header at index 0, footer at last index — math correct because
+// rejoinedRdd contains LOGICAL records not raw lines
 var rdd = rejoinedRdd
   .zipWithIndex()
   .filter(row => row._2 > ignoreHeaderLines && row._2 < footerLines)
   .keys
 
+// Multi-char delimiter replacement — your existing logic unchanged
 if (sep.length > 1 && spark.version.startsWith("2") && isMultiDelimiter)
   rdd = rdd.map(line => line.replaceAll(sep, optionsMap("sep")))
 
+// Convert to Dataset[String] for spark.read.csv
 val ds = rdd.toDS()
+
+// spark.read.csv with multiLine=true handles the \n we preserved inside
+// quoted fields — the rejoined records are now parsed correctly
 var df = spark.read
   .options(optionsMap)
   .schema(dfSchema.add(corruptColumn))
@@ -82,6 +170,10 @@ var df = spark.read
   .csv(ds)
   .withColumn("source_file_name",
       substring_index(input_file_name(), "/", -1))
-  .withColumn("source_file_name_with_path", input_file_name())
+  .withColumn("source_file_name_with_path",
+      input_file_name())
 
+// Release cache — rejoinedRdd no longer needed after df is built
+// Without unpersist: memory held until job ends or Spark evicts
+// With unpersist: memory freed immediately — safe for multi-file pipelines
 rejoinedRdd.unpersist()
