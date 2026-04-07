@@ -1,1 +1,55 @@
 
+I’ve added a Scala data-ingestion repo that reads data from files and writes into both Hive and Snowflake.
+
+Please do the following:
+
+Scan the entire repository and identify all Scala entry points and modules involved in:
+
+reading data from files (CSV/JSON/Parquet, etc.)
+
+writing to Hive tables
+
+writing to Snowflake tables
+For each, list the main classes/objects, functions, and configuration files, and explain how control flows from start to finish.
+
+Produce a high‑level architecture explanation of the ingestion pipeline, including:
+
+how Spark sessions are configured
+
+how environments (dev/qa/prod) are handled
+
+where Hive and Snowflake connection details and credentials are read from
+
+where schema, partitioning, and table‑creation logic live.
+
+Analyze code quality and potential issues specifically for:
+
+performance (partitions, shuffle, file sizes, broadcast joins, unnecessary collects)
+
+reliability (null handling, bad records, idempotent writes, transactionality)
+
+data correctness (schema evolution, type casting, time zone handling)
+
+security (secret handling, Snowflake/Hive privileges).
+Give concrete examples from the code with file paths and line numbers, and suggest Scala/Spark best‑practice improvements for each issue.
+
+Compare and contrast the Hive and Snowflake write paths:
+
+what is common vs duplicated
+
+whether write modes (append/overwrite), save formats, and partition strategies are consistent
+
+how failures and retries are handled in each target.
+Suggest a refactored design (with class/object structure) that removes duplication but keeps target‑specific logic clean.
+
+Based on all of the above, propose a refactoring plan as a checklist of changes (grouped into “quick wins”, “medium effort”, “larger refactors”).
+For 2–3 key files, show example refactored Scala code snippets or pseudo‑code that demonstrate your proposed improvements.
+
+Assumptions:
+
+The repo is <put repo name or link here>.
+
+The main ingestion job currently runs via <specify main class / entry point if you know it>.
+If any assumptions are wrong, first ask clarifying questions before making large changes.
+
+If you tell me the repo layout (e.g., src/main/scala/... package names and entry class)
