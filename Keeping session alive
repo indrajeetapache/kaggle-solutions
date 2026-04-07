@@ -1,15 +1,1 @@
-<execution>
-                    <phase>package</phase>
-                    <goals>
-                        <goal>shade</goal>
-                    </goals>
-                    <configuration>
-                        <relocations>
-                            <relocation>
-                                <!-- Renames jakarta.mail → shaded.jakarta.mail -->
-                                <pattern>jakarta.mail</pattern>
-                                <shadedPattern>shaded.jakarta.mail</shadedPattern>
-                            </relocation>
-                        </relocations>
-                    </configuration>
-                </execution>
+
