@@ -23,3 +23,12 @@ EOF
 # run it and capture result
 result=$(spark-submit --master yarn /tmp/run_query.py 2>/dev/null)
 echo "Count: $result"
+
+result=$(echo "
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('q').getOrCreate()
+spark.sparkContext.setLogLevel('ERROR')
+print(spark.sql('SELECT count(*) FROM gcgeetlnaenrd_work.UDM_DEPOSIT_INCR_RP').collect()[0][0])
+" | /opt/cloudera/parcels/SPARK3/lib/spark3/bin/pyspark 2>/dev/null | tail -1)
+
+echo "Count: $result"
