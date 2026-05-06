@@ -1,1 +1,10 @@
 count=$(spark-sql --master yarn -e "SELECT count(*) FROM gcgxlonaprp_ccds_v_i_int_db.payments_external_vw WHERE load_date = '2026-05-05'"  | tail -1)
+
+#!/bin/bash
+export SPARK_HOME=/opt/cloudera/parcels/SPARK3/lib/spark3
+export PATH=$SPARK_HOME/bin:$PATH
+
+result=$(spark-sql --master yarn \
+  -e "SELECT count(*) FROM my_database.my_table WHERE dt = '2026-05-05'" | tail -1)
+
+echo "Count: $result"
