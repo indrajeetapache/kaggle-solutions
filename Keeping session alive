@@ -1,5 +1,1 @@
-df.write \
-    .format("com.crealytics.spark.excel") \
-    .option("header", "true") \
-    .mode("overwrite") \
-    .save("output.xlsx")
+count=$(spark-sql --master yarn -e "SELECT count(*) FROM gcgxlonaprp_ccds_v_i_int_db.payments_external_vw WHERE load_date = '2026-05-05'"  | tail -1)
