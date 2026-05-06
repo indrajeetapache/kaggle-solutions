@@ -8,3 +8,18 @@ result=$(spark-sql --master yarn \
   -e "SELECT count(*) FROM my_database.my_table WHERE dt = '2026-05-05'" | tail -1)
 
 echo "Count: $result"
+
+
+# create the python query script
+cat << 'EOF' > /tmp/run_query.py
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("SQLQuery").getOrCreate()
+spark.sparkContext.setLogLevel("ERROR")
+result = spark.sql("SELECT count(*) FROM gcgeetlnaenrd_work.UDM_DEPOSIT_INCR_RP")
+print(result.collect()[0][0])
+spark.stop()
+EOF
+
+# run it and capture result
+result=$(spark-submit --master yarn /tmp/run_query.py 2>/dev/null)
+echo "Count: $result"
