@@ -1,11 +1,1 @@
-Q1: Does developer influence selection of inputs? → YES
-Rationale:
-The developer independently selected the 10 profiling metrics (mean, standard deviation, sum, maximum, minimum, zero count, missing count, uniqueness, completeness, and distinct count) as inputs to the LSTM autoencoder model. These inputs were not prescribed by a regulator or external authority. The selection was based on the developer's domain knowledge of what statistical features best characterize the behavior of the balance column for anomaly detection purposes.
 
-Does developer influence selection of methodology? → YES
-Rationale:
-The developer independently selected the LSTM Autoencoder as the methodology for anomaly detection. The hyperparameters — sequence length (90), hidden size (70), dropout rate (0.2), and learning rate (0.001) — were determined through iterative training and evaluation on labelled data, selecting the configuration that yielded the best model performance. These parameters are fixed and owned by the model; end users cannot modify them. If retraining is required in future, any parameter changes will be made by the developer through the same evaluation process, not auto-selected by the system. None of these choices were prescribed by a regulator or external source — all were made by the developer based on technical judgment.
-
-Q3 (Output nature) → Probabilistic/Estimated, links to business decision
-Rationale:
-The model output is not a deterministic calculation — it produces a probabilistic anomaly assessment where the reconstruction error and anomaly score carry statistical uncertainty (threshold set at 95th percentile of validation errors). The output is delivered as an Excel report containing: the overall anomaly flag per record, the reconstruction error score, and a detailed breakdown identifying which profiling metrics (mean, sum, std, max, min, etc.) and which column/dimension drove the anomaly. This directly links to a business decision — triggering a data quality investigation on the flagged balance column, identifying the specific category and dimension responsible, and determining whether corrective action is needed on the underlying data pipeline.
