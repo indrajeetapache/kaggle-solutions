@@ -1,1 +1,3 @@
+spark.conf.get("spark.yarn.stagingDir", "not set")
 
+hdfs dfs -ls /user/gcgeetlnaenrd/.sparkStaging/application_1778428892721_6899
