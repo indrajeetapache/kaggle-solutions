@@ -1,3 +1,15 @@
-spark.conf.get("spark.yarn.stagingDir", "not set")
+from pyspark import SparkFiles
+import pandas as pd
 
-hdfs dfs -ls /user/gcgeetlnaenrd/.sparkStaging/application_1778428892721_6899
+# Read CSV locally using pandas (works with --files in cluster mode)
+local_path = SparkFiles.get("xlat_config.csv")
+pandas_df = pd.read_csv(
+    local_path,
+    header=0,
+    quotechar='"',
+    escapechar='"',
+    on_bad_lines='skip'
+)
+
+# Convert to Spark DataFrame
+df_csv = spark.createDataFrame(pandas_df)
