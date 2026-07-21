@@ -1,170 +1,87 @@
-package org.example.validation.spec
-
-import org.example.validation.{AuditMapValidator, ValidationFailure}
-import org.example.validation.schema.FileIngestionAuditSchema
-import org.scalatest.flatspec.AnyFlatSpec
-import org.scalatest.matchers.should.Matchers
+package org.example.validation
 
 /**
- * Validation tests for the File Ingestion Framework audit map schema.
+ * Generic, stateless validator for audit maps of type Map[String, String].
  *
- * Other framework teams REPLACE this file with their own schema spec.
- * Pattern stays identical:
- *   1. Full valid map         → passed
- *   2. Each key missing       → MissingKey failure
- *   3. Each key wrong format  → FormatViolation failure
- *   4. Empty value            → NullOrEmptyValue failure
- *   5. Multiple failures      → all reported together
+ * This is the core engine. It knows nothing about which framework it runs in.
+ * It takes any map and any schema (3 key sets) and returns a ValidationResult.
  *
- * The foreach loops auto-cover every key — add a key to schema, test coverage
- * expands automatically with zero extra test code.
+ * Validation order per key:
+ *   1. Key present in map?        → else MissingKey failure
+ *   2. Value non-null, non-empty? → else NullOrEmptyValue failure
+ *   3. Value format correct?      → else FormatViolation failure
+ *
+ * Copy this file as-is. Do not modify.
  */
-class FileIngestionAuditSchemaSpec extends AnyFlatSpec with Matchers {
+object AuditMapValidator {
 
-  import FileIngestionAuditSchema._
+  /**
+   * Validates a Map[String, String] against a given schema.
+   *
+   * @param auditMap        the fully-built audit mapping keys map
+   * @param doubleQuotedKeys keys whose values must be wrapped in double quotes "..."
+   * @param singleQuotedKeys keys whose values must be wrapped in single quotes '...'
+   * @param rawKeys          keys whose values must NOT be quote-wrapped
+   * @return ValidationResult with passed=true and empty failures, or passed=false with all failures
+   */
+  def validate(
+      auditMap: Map[String, String],
+      doubleQuotedKeys: Set[String],
+      singleQuotedKeys: Set[String],
+      rawKeys: Set[String]
+  ): ValidationResult = {
 
-  private def validate(map: Map[String, String]) =
-    AuditMapValidator.validate(map, doubleQuotedKeys, singleQuotedKeys, rawKeys)
+    val allRules: List[(String, FormatType)] =
+      doubleQuotedKeys.map(_ -> FormatType.DOUBLE_QUOTED).toList ++
+      singleQuotedKeys.map(_ -> FormatType.SINGLE_QUOTED).toList ++
+      rawKeys.map(_          -> FormatType.RAW).toList
 
-  // ── fully valid map matching the File Ingestion Framework contract ─────────
-  // Values must reflect what audit_mapping_keys actually contains at runtime:
-  //   doubleQuotedKeys → value is "..." (outer double quotes are part of the string)
-  //   rawKeys          → value is bare string, no wrapping
-  // ─────────────────────────────────────────────────────────────────────────
+    val failures: List[ValidationFailure] = allRules.flatMap { case (key, expectedFormat) =>
+      validateKey(auditMap, key, expectedFormat)
+    }
 
-  private val validAuditMap: Map[String, String] = Map(
+    ValidationResult(
+      passed   = failures.isEmpty,
+      failures = failures
+    )
+  }
 
-    // ── Stage 1: audit start block (line 81 in TestDriver) ──────────────────
+  // ---------- private ----------
 
-    // doubleQuotedKeys from stage 1
-    "region"                -> "\"NAM\"",
-    "frameworkName"         -> "\"file_ingestion_framework\"",
-    "frameworkVersion"      -> "\"7.0.0\"",
-    "fid"                   -> "\"gcganamfrmu\"",
-    "sourceCsi"             -> "\"123456\"",
-    "targetCsi"             -> "\"169912\"",
-    "spark_application_name"-> "\"DHUB_FW_FINF_CSV_FILE_INGESTION_20260721\"",
-    "appName"               -> "\"dhub_fw_finf_csv\"",
-    "expectedFileCount"     -> "\"1\"",
-    "execMode"              -> "\"Incremental\"",
-    "totalNasToHdfsCopyTime"-> "\"0.333333 Minutes\"",
-    "target"                -> "\"hive\"",
-    "databaseName"          -> "\"gcganamfrmu_work\"",
-    "tableName"             -> "\"dhub_finf_csv_1\"",
+  private def validateKey(
+      auditMap: Map[String, String],
+      key: String,
+      expectedFormat: FormatType
+  ): Option[ValidationFailure] = {
 
-    // rawKeys from stage 1
-    "isSourceS3"            -> "false",
-    "impalaRefresh"         -> "true",
+    auditMap.get(key) match {
+      case None =>
+        Some(ValidationFailure.MissingKey(key))
 
-    // ── Stage 2: audit end block (line 119 in TestDriver) ───────────────────
+      case Some(value) if value == null || value.isEmpty =>
+        Some(ValidationFailure.NullOrEmptyValue(key))
 
-    // doubleQuotedKeys from stage 2
-    "inputFiles"            -> "\"finf_csv_20250121.csv\"",
-    "reconciliation_metrics"-> "\"[{'audit_load_file_nm':'finf_csv_20250121.csv'}]\"",
-    "audit_pipeline_id"     -> "\"finf_dhub_pipeline_test-20260721020041049\"",
-    "ctrlFileValStatus"     -> "\"Success\"",
-    "dqpJsonString"         -> "\"{\\\"records\\\":[]}\"",
-    "dqpResponse"           -> "\"{\\\"Kafka response status\\\":\\\"200\\\"}\"",
-    "impalaExecTime"        -> "\"0 Seconds\"",
-    "src_rec_count"         -> "\"16288348\"",
-    "tgt_rec_count"         -> "\"16288348\"",
-    "checkSumType"          -> "\"MD5\"",
-    "idempotentExecutionTime"-> "\"0\"",
-
-    // rawKeys from stage 2
-    "sourceType"            -> "text",
-    "idempotentCriteriaMet" -> "false",
-    "ctrlFileValEnabled"    -> "true",
-    "failOnStale"           -> "false",
-    "enableStaleness"       -> "false",
-    "enableIdempotent"      -> "false",
-    "ctrlValFrmHeaderFooter"-> "false",
-    "ctrlCheckSumValEnabled"-> "false",
-    "ctrlCountValEnabled"   -> "true",
-    "schemaValEnabled"      -> "true",
-    "zeroRecProcEnabled"    -> "false"
-  )
-
-  // ── happy path ────────────────────────────────────────────────────────────
-
-  "FileIngestionAuditSchema" should "pass validation for a fully valid audit map" in {
-    val result = validate(validAuditMap)
-    withClue(result.failureSummary) {
-      result.passed shouldBe true
+      case Some(value) =>
+        checkFormat(key, value, expectedFormat)
     }
   }
 
-  // ── missing key: auto-generated for every mandatory key ───────────────────
+  private def checkFormat(
+      key: String,
+      value: String,
+      expectedFormat: FormatType
+  ): Option[ValidationFailure] = {
 
-  (doubleQuotedKeys ++ singleQuotedKeys ++ rawKeys).foreach { key =>
-    it should s"fail with MissingKey when '$key' is absent from the map" in {
-      val result = validate(validAuditMap - key)
-      result.passed shouldBe false
-      result.failures.exists {
-        case ValidationFailure.MissingKey(k) => k == key
-        case _                               => false
-      } shouldBe true
+    val isValid = expectedFormat match {
+      case FormatType.DOUBLE_QUOTED =>
+        value.startsWith("\"") && value.endsWith("\"") && value.length >= 2
+      case FormatType.SINGLE_QUOTED =>
+        value.startsWith("'") && value.endsWith("'") && value.length >= 2
+      case FormatType.RAW =>
+        !value.startsWith("\"") && !value.startsWith("'")
     }
-  }
 
-  // ── format violation: DOUBLE_QUOTED keys must have "..." values ───────────
-
-  doubleQuotedKeys.foreach { key =>
-    it should s"fail FormatViolation for DOUBLE_QUOTED key '$key' when value has no double quotes" in {
-      val result = validate(validAuditMap.updated(key, "bareValueNoQuotes"))
-      result.passed shouldBe false
-      result.failures.exists {
-        case ValidationFailure.FormatViolation(k, _, _) => k == key
-        case _                                          => false
-      } shouldBe true
-    }
-  }
-
-  // ── format violation: RAW keys must NOT have quote-wrapped values ─────────
-
-  rawKeys.foreach { key =>
-    it should s"fail FormatViolation for RAW key '$key' when value is double-quoted" in {
-      val result = validate(validAuditMap.updated(key, "\"shouldBeRaw\""))
-      result.passed shouldBe false
-      result.failures.exists {
-        case ValidationFailure.FormatViolation(k, _, _) => k == key
-        case _                                          => false
-      } shouldBe true
-    }
-  }
-
-  // ── empty value ───────────────────────────────────────────────────────────
-
-  it should "fail NullOrEmptyValue when any mandatory key has an empty string value" in {
-    val key    = doubleQuotedKeys.head
-    val result = validate(validAuditMap.updated(key, ""))
-    result.passed shouldBe false
-    result.failures.head shouldBe a[ValidationFailure.NullOrEmptyValue]
-    result.failures.head.key shouldBe key
-  }
-
-  // ── multiple failures reported together ───────────────────────────────────
-
-  it should "report all failures in a single result when multiple keys are wrong" in {
-    val badMap = validAuditMap
-      .- ("targetCsi")                          // MissingKey
-      .updated("sourceType", "\"wrongFormat\"") // FormatViolation (RAW key, got double-quoted)
-      .updated("src_rec_count", "")             // NullOrEmptyValue
-
-    val result = validate(badMap)
-    result.passed         shouldBe false
-    result.failures       should have size 3
-    result.failureSummary should include("targetCsi")
-    result.failureSummary should include("sourceType")
-    result.failureSummary should include("src_rec_count")
-  }
-
-  // ── failure summary format ────────────────────────────────────────────────
-
-  it should "include failure class name and reason in failureSummary" in {
-    val result = validate(validAuditMap - "region")
-    result.failureSummary should include("MissingKey")
-    result.failureSummary should include("region")
-    result.failureSummary should include("missing from the audit map")
+    if (isValid) None
+    else Some(ValidationFailure.FormatViolation(key, expectedFormat, value))
   }
 }
