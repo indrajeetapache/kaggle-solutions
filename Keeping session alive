@@ -1,18 +1,39 @@
 package org.example.validation
 
 /**
- * Defines the expected value format for a key in the audit map.
+ * Represents a single validation failure against the audit map.
  *
- * DOUBLE_QUOTED  → value must start and end with "  e.g. "169912"
- * SINGLE_QUOTED  → value must start and end with '  e.g. '169912'
- * RAW            → value must NOT be wrapped in any quotes e.g. false, text
+ * MissingKey       → mandatory key not found in map at all
+ * NullOrEmptyValue → key exists but value is null or empty string
+ * FormatViolation  → key exists, value non-empty, but quote format is wrong
  *
+ * Each failure carries the key and a human-readable reason.
  * Copy this file as-is. Do not modify.
  */
-sealed trait FormatType
+sealed trait ValidationFailure {
+  def key: String
+  def reason: String
+}
 
-object FormatType {
-  case object DOUBLE_QUOTED extends FormatType
-  case object SINGLE_QUOTED extends FormatType
-  case object RAW           extends FormatType
+object ValidationFailure {
+
+  case class MissingKey(key: String) extends ValidationFailure {
+    val reason: String = s"Mandatory key '$key' is missing from the audit map."
+  }
+
+  case class NullOrEmptyValue(key: String) extends ValidationFailure {
+    val reason: String = s"Key '$key' is present but its value is null or empty."
+  }
+
+  case class FormatViolation(key: String, expectedFormat: FormatType, actualValue: String)
+      extends ValidationFailure {
+    val reason: String = expectedFormat match {
+      case FormatType.DOUBLE_QUOTED =>
+        s"Key '$key' must have a value wrapped in double quotes (\"). Actual value: [$actualValue]"
+      case FormatType.SINGLE_QUOTED =>
+        s"Key '$key' must have a value wrapped in single quotes ('). Actual value: [$actualValue]"
+      case FormatType.RAW =>
+        s"Key '$key' must have a raw value (no quote wrapping). Actual value: [$actualValue]"
+    }
+  }
 }
