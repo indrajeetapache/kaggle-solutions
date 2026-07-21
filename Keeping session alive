@@ -1,24 +1,86 @@
-package org.example.validation
+package org.example.validation.schema
 
 /**
- * Result of validating an audit map against a schema.
+ * Audit map schema for the File Ingestion Framework.
  *
- * passed   → true only if zero failures
- * failures → full list of what failed and why (empty if passed)
+ * THIS IS THE ONLY FILE OTHER FRAMEWORK TEAMS NEED TO REPLACE.
+ * - Change the package name to match your framework
+ * - Reassign the 3 key sets below based on your map's format contract
+ * - All keys across the 3 sets are treated as MANDATORY
  *
- * Usage:
- *   val result = AuditMapValidator.validate(auditMap, schema)
- *   if (!result.passed) result.failures.foreach(f => logger.error(f.reason))
+ * Format rules:
+ *   doubleQuotedKeys → value in map must be wrapped in "..."  e.g. "169912"
+ *   singleQuotedKeys → value in map must be wrapped in '...'  e.g. '169912'
+ *   rawKeys          → value must be bare, no quote wrapping   e.g. false, text
  *
- * Copy this file as-is. Do not modify.
+ * No key should appear in more than one set.
+ *
+ * Keys sourced from TestDriver.scala audit_mapping_keys build:
+ *   Stage 1 (audit start block  ~line 81)  : region, frameworkName, frameworkVersion,
+ *     fid, sourceCsi, targetCsi, spark_application_name, appName, expectedFileCount,
+ *     execMode, totalNasToHdfsCopyTime, isSourceS3, impalaRefresh,
+ *     target, databaseName, tableName (conditional on target=hive/iceberg)
+ *   Stage 2 (audit end block   ~line 119)  : sourceType, src_rec_count, tgt_rec_count,
+ *     idempotentCriteriaMet, idempotentExecutionTime, inputFiles, reconciliation_metrics,
+ *     audit_pipeline_id, ctrlFileValEnabled, ctrlFileValStatus, dqpJsonString, dqpResponse,
+ *     failOnStale, enableStaleness, enableIdempotent, ctrlValFrmHeaderFooter,
+ *     ctrlCheckSumValEnabled, ctrlCountValEnabled, schemaValEnabled,
+ *     zeroRecProcEnabled, checkSumType, impalaExecTime
  */
-case class ValidationResult(
-    passed: Boolean,
-    failures: List[ValidationFailure]
-) {
+object FileIngestionAuditSchema {
 
-  /** Convenience: all failure reasons as a single formatted string. */
-  def failureSummary: String =
-    if (passed) "Validation passed. No failures."
-    else failures.map(f => s"  [${f.getClass.getSimpleName}] ${f.reason}").mkString("\n")
+  /** Values expected to be wrapped in double quotes: "value" */
+  val doubleQuotedKeys: Set[String] = Set(
+    // Stage 1 — audit start block
+    "region",
+    "frameworkName",
+    "frameworkVersion",
+    "fid",
+    "sourceCsi",
+    "targetCsi",
+    "spark_application_name",
+    "appName",
+    "expectedFileCount",
+    "execMode",
+    "totalNasToHdfsCopyTime",
+    "target",
+    "databaseName",
+    "tableName",
+    // Stage 2 — audit end block
+    "inputFiles",
+    "reconciliation_metrics",
+    "audit_pipeline_id",
+    "ctrlFileValStatus",
+    "dqpJsonString",
+    "dqpResponse",
+    "impalaExecTime",
+    "src_rec_count",
+    "tgt_rec_count",
+    "checkSumType",
+    "idempotentExecutionTime"
+  )
+
+  /** Values expected to be wrapped in single quotes: 'value' */
+  val singleQuotedKeys: Set[String] = Set(
+    // populate if any keys in your map carry 'value' format
+  )
+
+  /** Values expected to be raw (no quote wrapping): false, true, 0, text */
+  val rawKeys: Set[String] = Set(
+    // Stage 1 — audit start block
+    "isSourceS3",
+    "impalaRefresh",
+    // Stage 2 — audit end block
+    "sourceType",
+    "idempotentCriteriaMet",
+    "ctrlFileValEnabled",
+    "failOnStale",
+    "enableStaleness",
+    "enableIdempotent",
+    "ctrlValFrmHeaderFooter",
+    "ctrlCheckSumValEnabled",
+    "ctrlCountValEnabled",
+    "schemaValEnabled",
+    "zeroRecProcEnabled"
+  )
 }
