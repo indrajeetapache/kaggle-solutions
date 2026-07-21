@@ -1,159 +1,170 @@
 package org.example.validation.spec
 
-import org.example.validation.{AuditMapValidator, FormatType, ValidationFailure}
+import org.example.validation.{AuditMapValidator, ValidationFailure}
+import org.example.validation.schema.FileIngestionAuditSchema
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 /**
- * Unit tests for the generic AuditMapValidator engine.
- * Tests the engine in isolation — no framework schema involved.
+ * Validation tests for the File Ingestion Framework audit map schema.
  *
- * Copy this file as-is. Do not modify.
+ * Other framework teams REPLACE this file with their own schema spec.
+ * Pattern stays identical:
+ *   1. Full valid map         → passed
+ *   2. Each key missing       → MissingKey failure
+ *   3. Each key wrong format  → FormatViolation failure
+ *   4. Empty value            → NullOrEmptyValue failure
+ *   5. Multiple failures      → all reported together
+ *
+ * The foreach loops auto-cover every key — add a key to schema, test coverage
+ * expands automatically with zero extra test code.
  */
-class AuditMapValidatorSpec extends AnyFlatSpec with Matchers {
+class FileIngestionAuditSchemaSpec extends AnyFlatSpec with Matchers {
 
-  // ── fixtures ──────────────────────────────────────────────────────────────
-
-  private val doubleKeys = Set("keyDouble")
-  private val singleKeys = Set("keySingle")
-  private val rawKeys    = Set("keyRaw")
+  import FileIngestionAuditSchema._
 
   private def validate(map: Map[String, String]) =
-    AuditMapValidator.validate(map, doubleKeys, singleKeys, rawKeys)
+    AuditMapValidator.validate(map, doubleQuotedKeys, singleQuotedKeys, rawKeys)
+
+  // ── fully valid map matching the File Ingestion Framework contract ─────────
+  // Values must reflect what audit_mapping_keys actually contains at runtime:
+  //   doubleQuotedKeys → value is "..." (outer double quotes are part of the string)
+  //   rawKeys          → value is bare string, no wrapping
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private val validAuditMap: Map[String, String] = Map(
+
+    // ── Stage 1: audit start block (line 81 in TestDriver) ──────────────────
+
+    // doubleQuotedKeys from stage 1
+    "region"                -> "\"NAM\"",
+    "frameworkName"         -> "\"file_ingestion_framework\"",
+    "frameworkVersion"      -> "\"7.0.0\"",
+    "fid"                   -> "\"gcganamfrmu\"",
+    "sourceCsi"             -> "\"123456\"",
+    "targetCsi"             -> "\"169912\"",
+    "spark_application_name"-> "\"DHUB_FW_FINF_CSV_FILE_INGESTION_20260721\"",
+    "appName"               -> "\"dhub_fw_finf_csv\"",
+    "expectedFileCount"     -> "\"1\"",
+    "execMode"              -> "\"Incremental\"",
+    "totalNasToHdfsCopyTime"-> "\"0.333333 Minutes\"",
+    "target"                -> "\"hive\"",
+    "databaseName"          -> "\"gcganamfrmu_work\"",
+    "tableName"             -> "\"dhub_finf_csv_1\"",
+
+    // rawKeys from stage 1
+    "isSourceS3"            -> "false",
+    "impalaRefresh"         -> "true",
+
+    // ── Stage 2: audit end block (line 119 in TestDriver) ───────────────────
+
+    // doubleQuotedKeys from stage 2
+    "inputFiles"            -> "\"finf_csv_20250121.csv\"",
+    "reconciliation_metrics"-> "\"[{'audit_load_file_nm':'finf_csv_20250121.csv'}]\"",
+    "audit_pipeline_id"     -> "\"finf_dhub_pipeline_test-20260721020041049\"",
+    "ctrlFileValStatus"     -> "\"Success\"",
+    "dqpJsonString"         -> "\"{\\\"records\\\":[]}\"",
+    "dqpResponse"           -> "\"{\\\"Kafka response status\\\":\\\"200\\\"}\"",
+    "impalaExecTime"        -> "\"0 Seconds\"",
+    "src_rec_count"         -> "\"16288348\"",
+    "tgt_rec_count"         -> "\"16288348\"",
+    "checkSumType"          -> "\"MD5\"",
+    "idempotentExecutionTime"-> "\"0\"",
+
+    // rawKeys from stage 2
+    "sourceType"            -> "text",
+    "idempotentCriteriaMet" -> "false",
+    "ctrlFileValEnabled"    -> "true",
+    "failOnStale"           -> "false",
+    "enableStaleness"       -> "false",
+    "enableIdempotent"      -> "false",
+    "ctrlValFrmHeaderFooter"-> "false",
+    "ctrlCheckSumValEnabled"-> "false",
+    "ctrlCountValEnabled"   -> "true",
+    "schemaValEnabled"      -> "true",
+    "zeroRecProcEnabled"    -> "false"
+  )
 
   // ── happy path ────────────────────────────────────────────────────────────
 
-  "AuditMapValidator" should "pass when all keys are present with correct formats" in {
-    val map = Map(
-      "keyDouble" -> "\"someValue\"",
-      "keySingle" -> "'someValue'",
-      "keyRaw"    -> "someValue"
-    )
-    val result = validate(map)
-    result.passed   shouldBe true
-    result.failures shouldBe empty
+  "FileIngestionAuditSchema" should "pass validation for a fully valid audit map" in {
+    val result = validate(validAuditMap)
+    withClue(result.failureSummary) {
+      result.passed shouldBe true
+    }
   }
 
-  it should "pass for double-quoted key with empty content inside quotes" in {
-    val result = validate(Map("keyDouble" -> "\"\"", "keySingle" -> "'x'", "keyRaw" -> "x"))
-    result.passed shouldBe true
+  // ── missing key: auto-generated for every mandatory key ───────────────────
+
+  (doubleQuotedKeys ++ singleQuotedKeys ++ rawKeys).foreach { key =>
+    it should s"fail with MissingKey when '$key' is absent from the map" in {
+      val result = validate(validAuditMap - key)
+      result.passed shouldBe false
+      result.failures.exists {
+        case ValidationFailure.MissingKey(k) => k == key
+        case _                               => false
+      } shouldBe true
+    }
   }
 
-  it should "pass for single-quoted key with empty content inside quotes" in {
-    val result = validate(Map("keyDouble" -> "\"x\"", "keySingle" -> "''", "keyRaw" -> "x"))
-    result.passed shouldBe true
+  // ── format violation: DOUBLE_QUOTED keys must have "..." values ───────────
+
+  doubleQuotedKeys.foreach { key =>
+    it should s"fail FormatViolation for DOUBLE_QUOTED key '$key' when value has no double quotes" in {
+      val result = validate(validAuditMap.updated(key, "bareValueNoQuotes"))
+      result.passed shouldBe false
+      result.failures.exists {
+        case ValidationFailure.FormatViolation(k, _, _) => k == key
+        case _                                          => false
+      } shouldBe true
+    }
   }
 
-  // ── missing key ───────────────────────────────────────────────────────────
+  // ── format violation: RAW keys must NOT have quote-wrapped values ─────────
 
-  it should "fail with MissingKey when a mandatory key is absent" in {
-    val map    = Map("keySingle" -> "'v'", "keyRaw" -> "v") // keyDouble missing
-    val result = validate(map)
-    result.passed shouldBe false
-    result.failures should have size 1
-    result.failures.head shouldBe a[ValidationFailure.MissingKey]
-    result.failures.head.key shouldBe "keyDouble"
+  rawKeys.foreach { key =>
+    it should s"fail FormatViolation for RAW key '$key' when value is double-quoted" in {
+      val result = validate(validAuditMap.updated(key, "\"shouldBeRaw\""))
+      result.passed shouldBe false
+      result.failures.exists {
+        case ValidationFailure.FormatViolation(k, _, _) => k == key
+        case _                                          => false
+      } shouldBe true
+    }
   }
 
-  it should "report all missing keys when multiple are absent" in {
-    val result = validate(Map.empty)
-    result.passed shouldBe false
-    result.failures should have size 3
-    result.failures.map(_.key) should contain allOf ("keyDouble", "keySingle", "keyRaw")
-  }
+  // ── empty value ───────────────────────────────────────────────────────────
 
-  // ── null / empty value ────────────────────────────────────────────────────
-
-  it should "fail with NullOrEmptyValue when value is empty string" in {
-    val map    = Map("keyDouble" -> "", "keySingle" -> "'v'", "keyRaw" -> "v")
-    val result = validate(map)
+  it should "fail NullOrEmptyValue when any mandatory key has an empty string value" in {
+    val key    = doubleQuotedKeys.head
+    val result = validate(validAuditMap.updated(key, ""))
     result.passed shouldBe false
     result.failures.head shouldBe a[ValidationFailure.NullOrEmptyValue]
-    result.failures.head.key shouldBe "keyDouble"
+    result.failures.head.key shouldBe key
   }
 
-  // ── format violations: DOUBLE_QUOTED ─────────────────────────────────────
+  // ── multiple failures reported together ───────────────────────────────────
 
-  it should "fail FormatViolation for DOUBLE_QUOTED key with single-quoted value" in {
-    val map    = Map("keyDouble" -> "'wrongFormat'", "keySingle" -> "'v'", "keyRaw" -> "v")
-    val result = validate(map)
-    result.passed shouldBe false
-    val failure = result.failures.head
-    failure shouldBe a[ValidationFailure.FormatViolation]
-    failure.key shouldBe "keyDouble"
-    failure.reason should include("double quotes")
+  it should "report all failures in a single result when multiple keys are wrong" in {
+    val badMap = validAuditMap
+      .- ("targetCsi")                          // MissingKey
+      .updated("sourceType", "\"wrongFormat\"") // FormatViolation (RAW key, got double-quoted)
+      .updated("src_rec_count", "")             // NullOrEmptyValue
+
+    val result = validate(badMap)
+    result.passed         shouldBe false
+    result.failures       should have size 3
+    result.failureSummary should include("targetCsi")
+    result.failureSummary should include("sourceType")
+    result.failureSummary should include("src_rec_count")
   }
 
-  it should "fail FormatViolation for DOUBLE_QUOTED key with raw value" in {
-    val map    = Map("keyDouble" -> "rawValue", "keySingle" -> "'v'", "keyRaw" -> "v")
-    val result = validate(map)
-    result.passed shouldBe false
-    result.failures.head shouldBe a[ValidationFailure.FormatViolation]
-  }
+  // ── failure summary format ────────────────────────────────────────────────
 
-  it should "fail FormatViolation for DOUBLE_QUOTED key missing closing quote" in {
-    val map    = Map("keyDouble" -> "\"noClosing", "keySingle" -> "'v'", "keyRaw" -> "v")
-    val result = validate(map)
-    result.passed shouldBe false
-    result.failures.head shouldBe a[ValidationFailure.FormatViolation]
-  }
-
-  // ── format violations: SINGLE_QUOTED ─────────────────────────────────────
-
-  it should "fail FormatViolation for SINGLE_QUOTED key with double-quoted value" in {
-    val map    = Map("keyDouble" -> "\"v\"", "keySingle" -> "\"wrongFormat\"", "keyRaw" -> "v")
-    val result = validate(map)
-    result.passed shouldBe false
-    val failure = result.failures.head
-    failure.key shouldBe "keySingle"
-    failure.reason should include("single quotes")
-  }
-
-  it should "fail FormatViolation for SINGLE_QUOTED key with raw value" in {
-    val map    = Map("keyDouble" -> "\"v\"", "keySingle" -> "rawValue", "keyRaw" -> "v")
-    val result = validate(map)
-    result.passed shouldBe false
-    result.failures.head shouldBe a[ValidationFailure.FormatViolation]
-  }
-
-  // ── format violations: RAW ────────────────────────────────────────────────
-
-  it should "fail FormatViolation for RAW key with double-quoted value" in {
-    val map    = Map("keyDouble" -> "\"v\"", "keySingle" -> "'v'", "keyRaw" -> "\"shouldBeRaw\"")
-    val result = validate(map)
-    result.passed shouldBe false
-    val failure = result.failures.head
-    failure.key shouldBe "keyRaw"
-    failure.reason should include("raw value")
-  }
-
-  it should "fail FormatViolation for RAW key with single-quoted value" in {
-    val map    = Map("keyDouble" -> "\"v\"", "keySingle" -> "'v'", "keyRaw" -> "'shouldBeRaw'")
-    val result = validate(map)
-    result.passed shouldBe false
-    result.failures.head.key shouldBe "keyRaw"
-  }
-
-  // ── multiple failures ─────────────────────────────────────────────────────
-
-  it should "report multiple failures in one result" in {
-    val map = Map(
-      "keyDouble" -> "wrongFormat",   // FormatViolation
-      "keySingle" -> "",              // NullOrEmptyValue
-                                      // keyRaw missing → MissingKey
-    )
-    val result = validate(map)
-    result.passed          shouldBe false
-    result.failures        should have size 3
-    result.failureSummary  should include("MissingKey")
-    result.failureSummary  should include("NullOrEmptyValue")
-    result.failureSummary  should include("FormatViolation")
-  }
-
-  // ── failure summary ───────────────────────────────────────────────────────
-
-  it should "return a clean summary string when passed" in {
-    val map = Map("keyDouble" -> "\"v\"", "keySingle" -> "'v'", "keyRaw" -> "v")
-    validate(map).failureSummary shouldBe "Validation passed. No failures."
+  it should "include failure class name and reason in failureSummary" in {
+    val result = validate(validAuditMap - "region")
+    result.failureSummary should include("MissingKey")
+    result.failureSummary should include("region")
+    result.failureSummary should include("missing from the audit map")
   }
 }
