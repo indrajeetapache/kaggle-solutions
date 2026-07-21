@@ -1,87 +1,215 @@
-package org.example.validation
+package org.example.validation.spec
+
+import org.example.validation.{AuditMapValidator, ValidationFailure, ValidationResult}
+import org.example.validation.schema.FileIngestionAuditSchema
 
 /**
- * Generic, stateless validator for audit maps of type Map[String, String].
+ * Plain Scala tests for the File Ingestion Framework audit map schema.
+ * No ScalaTest or any external test framework needed.
  *
- * This is the core engine. It knows nothing about which framework it runs in.
- * It takes any map and any schema (3 key sets) and returns a ValidationResult.
+ * Run via: FileIngestionAuditSchemaTest.main(Array.empty)
+ * Can be called from TestDriver after audit_mapping_keys is fully built.
  *
- * Validation order per key:
- *   1. Key present in map?        → else MissingKey failure
- *   2. Value non-null, non-empty? → else NullOrEmptyValue failure
- *   3. Value format correct?      → else FormatViolation failure
- *
- * Copy this file as-is. Do not modify.
+ * OTHER FRAMEWORK TEAMS — replace this file:
+ *   1. Rename the object
+ *   2. Update the import to your schema object
+ *   3. Rebuild validAuditMap with your actual runtime key-value pairs
+ *   4. The foreach loops auto-cover every key — no other changes needed
  */
-object AuditMapValidator {
+object FileIngestionAuditSchemaTest {
 
-  /**
-   * Validates a Map[String, String] against a given schema.
-   *
-   * @param auditMap        the fully-built audit mapping keys map
-   * @param doubleQuotedKeys keys whose values must be wrapped in double quotes "..."
-   * @param singleQuotedKeys keys whose values must be wrapped in single quotes '...'
-   * @param rawKeys          keys whose values must NOT be quote-wrapped
-   * @return ValidationResult with passed=true and empty failures, or passed=false with all failures
-   */
-  def validate(
-      auditMap: Map[String, String],
-      doubleQuotedKeys: Set[String],
-      singleQuotedKeys: Set[String],
-      rawKeys: Set[String]
-  ): ValidationResult = {
+  import FileIngestionAuditSchema._
 
-    val allRules: List[(String, FormatType)] =
-      doubleQuotedKeys.map(_ -> FormatType.DOUBLE_QUOTED).toList ++
-      singleQuotedKeys.map(_ -> FormatType.SINGLE_QUOTED).toList ++
-      rawKeys.map(_          -> FormatType.RAW).toList
+  private def validate(map: Map[String, String]): ValidationResult =
+    AuditMapValidator.validate(map, doubleQuotedKeys, singleQuotedKeys, rawKeys)
 
-    val failures: List[ValidationFailure] = allRules.flatMap { case (key, expectedFormat) =>
-      validateKey(auditMap, key, expectedFormat)
+  // ── fully valid map — reflects actual runtime values in audit_mapping_keys ─
+  //
+  //   doubleQuotedKeys → value string contains outer "  e.g.  "\"169912\""
+  //   rawKeys          → bare string, no wrapping      e.g.  "false"
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private val validAuditMap: Map[String, String] = Map(
+
+    // Stage 1 — audit start block (~line 81 in TestDriver)
+    "region"                 -> "\"NAM\"",
+    "frameworkName"          -> "\"file_ingestion_framework\"",
+    "frameworkVersion"       -> "\"7.0.0\"",
+    "fid"                    -> "\"gcganamfrmu\"",
+    "sourceCsi"              -> "\"123456\"",
+    "targetCsi"              -> "\"169912\"",
+    "spark_application_name" -> "\"DHUB_FW_FINF_CSV_FILE_INGESTION_20260721\"",
+    "appName"                -> "\"dhub_fw_finf_csv\"",
+    "expectedFileCount"      -> "\"1\"",
+    "execMode"               -> "\"Incremental\"",
+    "totalNasToHdfsCopyTime" -> "\"0.333333 Minutes\"",
+    "target"                 -> "\"hive\"",
+    "databaseName"           -> "\"gcganamfrmu_work\"",
+    "tableName"              -> "\"dhub_finf_csv_1\"",
+    "isSourceS3"             -> "false",
+    "impalaRefresh"          -> "true",
+
+    // Stage 2 — audit end block (~line 119 in TestDriver)
+    "inputFiles"             -> "\"finf_csv_20250121.csv\"",
+    "reconciliation_metrics" -> "\"[{'audit_load_file_nm':'finf_csv_20250121.csv'}]\"",
+    "audit_pipeline_id"      -> "\"finf_dhub_pipeline_test-20260721020041049\"",
+    "ctrlFileValStatus"      -> "\"Success\"",
+    "dqpJsonString"          -> "\"{\\\"records\\\":[]}\"",
+    "dqpResponse"            -> "\"{\\\"Kafka response status\\\":\\\"200\\\"}\"",
+    "impalaExecTime"         -> "\"0 Seconds\"",
+    "src_rec_count"          -> "\"16288348\"",
+    "tgt_rec_count"          -> "\"16288348\"",
+    "checkSumType"           -> "\"MD5\"",
+    "idempotentExecutionTime"-> "\"0\"",
+    "sourceType"             -> "text",
+    "idempotentCriteriaMet"  -> "false",
+    "ctrlFileValEnabled"     -> "true",
+    "failOnStale"            -> "false",
+    "enableStaleness"        -> "false",
+    "enableIdempotent"       -> "false",
+    "ctrlValFrmHeaderFooter" -> "false",
+    "ctrlCheckSumValEnabled" -> "false",
+    "ctrlCountValEnabled"    -> "true",
+    "schemaValEnabled"       -> "true",
+    "zeroRecProcEnabled"     -> "false"
+  )
+
+  // ── test runner ───────────────────────────────────────────────────────────
+
+  def main(args: Array[String]): Unit = {
+
+    // happy path
+    val happyPath = List(
+      run("pass_full_valid_map", test_pass_fullValidMap)
+    )
+
+    // missing key: one test auto-generated per mandatory key
+    val missingKeyTests = (doubleQuotedKeys ++ singleQuotedKeys ++ rawKeys).toList.map { key =>
+      run(s"fail_missingKey_$key", test_fail_missingKey(key))
     }
 
-    ValidationResult(
-      passed   = failures.isEmpty,
-      failures = failures
+    // format violation for DOUBLE_QUOTED keys: value has no quotes
+    val doubleFormatTests = doubleQuotedKeys.toList.map { key =>
+      run(s"fail_format_doubleQuoted_$key", test_fail_formatViolation_doubleQuoted(key))
+    }
+
+    // format violation for SINGLE_QUOTED keys: value has no quotes
+    val singleFormatTests = singleQuotedKeys.toList.map { key =>
+      run(s"fail_format_singleQuoted_$key", test_fail_formatViolation_singleQuoted(key))
+    }
+
+    // format violation for RAW keys: value is double-quoted instead of raw
+    val rawFormatTests = rawKeys.toList.map { key =>
+      run(s"fail_format_raw_$key", test_fail_formatViolation_raw(key))
+    }
+
+    // edge cases
+    val edgeCases = List(
+      run("fail_emptyValue_on_doubleQuotedKey",     test_fail_emptyValue),
+      run("fail_multiple_failures_reported_together", test_fail_multipleFailures),
+      run("pass_failureSummary_format",              test_pass_failureSummaryFormat)
+    )
+
+    val allResults = happyPath ++ missingKeyTests ++ doubleFormatTests ++
+                     singleFormatTests ++ rawFormatTests ++ edgeCases
+
+    printReport("FileIngestionAuditSchema", allResults)
+
+    if (allResults.exists(!_._2)) sys.exit(1)
+  }
+
+  // ── individual tests ──────────────────────────────────────────────────────
+
+  private def test_pass_fullValidMap(): Unit = {
+    val result = validate(validAuditMap)
+    assertTrue(result.passed, s"Full valid map should pass.\n${result.failureSummary}")
+  }
+
+  private def test_fail_missingKey(key: String)(): Unit = {
+    val result = validate(validAuditMap - key)
+    assertTrue(!result.passed, s"Expected failure when '$key' is absent")
+    assertTrue(
+      result.failures.exists { case ValidationFailure.MissingKey(k) => k == key; case _ => false },
+      s"Expected MissingKey for '$key'"
     )
   }
 
-  // ---------- private ----------
-
-  private def validateKey(
-      auditMap: Map[String, String],
-      key: String,
-      expectedFormat: FormatType
-  ): Option[ValidationFailure] = {
-
-    auditMap.get(key) match {
-      case None =>
-        Some(ValidationFailure.MissingKey(key))
-
-      case Some(value) if value == null || value.isEmpty =>
-        Some(ValidationFailure.NullOrEmptyValue(key))
-
-      case Some(value) =>
-        checkFormat(key, value, expectedFormat)
-    }
+  private def test_fail_formatViolation_doubleQuoted(key: String)(): Unit = {
+    val result = validate(validAuditMap.updated(key, "bareValueNoQuotes"))
+    assertTrue(!result.passed, s"Expected failure when DOUBLE_QUOTED key '$key' has no quotes")
+    assertTrue(
+      result.failures.exists { case ValidationFailure.FormatViolation(k, _, _) => k == key; case _ => false },
+      s"Expected FormatViolation for '$key'"
+    )
   }
 
-  private def checkFormat(
-      key: String,
-      value: String,
-      expectedFormat: FormatType
-  ): Option[ValidationFailure] = {
+  private def test_fail_formatViolation_singleQuoted(key: String)(): Unit = {
+    val result = validate(validAuditMap.updated(key, "bareValueNoQuotes"))
+    assertTrue(!result.passed, s"Expected failure when SINGLE_QUOTED key '$key' has no quotes")
+    assertTrue(
+      result.failures.exists { case ValidationFailure.FormatViolation(k, _, _) => k == key; case _ => false },
+      s"Expected FormatViolation for '$key'"
+    )
+  }
 
-    val isValid = expectedFormat match {
-      case FormatType.DOUBLE_QUOTED =>
-        value.startsWith("\"") && value.endsWith("\"") && value.length >= 2
-      case FormatType.SINGLE_QUOTED =>
-        value.startsWith("'") && value.endsWith("'") && value.length >= 2
-      case FormatType.RAW =>
-        !value.startsWith("\"") && !value.startsWith("'")
+  private def test_fail_formatViolation_raw(key: String)(): Unit = {
+    val result = validate(validAuditMap.updated(key, "\"shouldBeRaw\""))
+    assertTrue(!result.passed, s"Expected failure when RAW key '$key' has double-quoted value")
+    assertTrue(
+      result.failures.exists { case ValidationFailure.FormatViolation(k, _, _) => k == key; case _ => false },
+      s"Expected FormatViolation for '$key'"
+    )
+  }
+
+  private def test_fail_emptyValue(): Unit = {
+    val key    = doubleQuotedKeys.head
+    val result = validate(validAuditMap.updated(key, ""))
+    assertTrue(!result.passed, "Expected failure for empty value")
+    assertTrue(
+      result.failures.head.isInstanceOf[ValidationFailure.NullOrEmptyValue],
+      s"Expected NullOrEmptyValue, got ${result.failures.head.getClass.getSimpleName}"
+    )
+  }
+
+  private def test_fail_multipleFailures(): Unit = {
+    val badMap = validAuditMap
+      .-("targetCsi")                           // MissingKey
+      .updated("sourceType", "\"wrongFormat\"") // FormatViolation (RAW key got double-quoted)
+      .updated("src_rec_count", "")             // NullOrEmptyValue
+    val result = validate(badMap)
+    assertTrue(!result.passed, "Expected passed=false")
+    assertTrue(result.failures.size == 3, s"Expected 3 failures, got ${result.failures.size}")
+  }
+
+  private def test_pass_failureSummaryFormat(): Unit = {
+    val result = validate(validAuditMap - "region")
+    assertTrue(result.failureSummary.contains("region"),    "Summary should contain key name")
+    assertTrue(result.failureSummary.contains("MissingKey"),"Summary should contain failure type")
+  }
+
+  // ── assertion helpers ─────────────────────────────────────────────────────
+
+  private def assertTrue(condition: Boolean, message: String): Unit =
+    if (!condition) throw new AssertionError(message)
+
+  // ── report printer ────────────────────────────────────────────────────────
+
+  private def run(name: String, test: => Unit): (String, Boolean) = {
+    try { test; (name, true) }
+    catch { case e: Throwable => println(s"  FAIL [$name]: ${e.getMessage}"); (name, false) }
+  }
+
+  private def printReport(suiteName: String, results: List[(String, Boolean)]): Unit = {
+    val passed = results.count(_._2)
+    val failed = results.count(!_._2)
+    println(s"\n${"=" * 60}")
+    println(s"  TEST SUITE : $suiteName")
+    println(s"${"=" * 60}")
+    results.foreach { case (name, ok) =>
+      println(s"  ${if (ok) "PASS" else "FAIL"} : $name")
     }
-
-    if (isValid) None
-    else Some(ValidationFailure.FormatViolation(key, expectedFormat, value))
+    println(s"${"=" * 60}")
+    println(s"  Results : $passed passed, $failed failed")
+    println(s"${"=" * 60}\n")
   }
 }
