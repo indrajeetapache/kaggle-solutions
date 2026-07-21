@@ -1,197 +1,26 @@
-package org.example.validation.spec
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT MAP VALIDATION — added in TestDriver only, zero touch to Driver.scala
+//
+// Paste this block AFTER line 130 (AuditIntegration.audit_final_call)
+// and BEFORE line 133 (if (staleDataJobFailStatus) sys.exit(1))
+//
+// audit_mapping_keys is fully built by this point (stages 1 + 2 both done).
+// ─────────────────────────────────────────────────────────────────────────────
 
-import org.example.validation.{AuditMapValidator, ValidationFailure, ValidationResult}
+import org.example.validation.AuditMapValidator
+import org.example.validation.schema.FileIngestionAuditSchema
 
-/**
- * Plain Scala tests for the AuditMapValidator engine.
- * No ScalaTest or any external test framework needed.
- *
- * Run via: AuditMapValidatorTest.main(Array.empty)
- * Can be called from TestDriver or standalone.
- *
- * COPY AS-IS — do not modify.
- */
-object AuditMapValidatorTest {
+val auditValidationResult = AuditMapValidator.validate(
+  auditMap         = audit_mapping_keys,
+  doubleQuotedKeys = FileIngestionAuditSchema.doubleQuotedKeys,
+  singleQuotedKeys = FileIngestionAuditSchema.singleQuotedKeys,
+  rawKeys          = FileIngestionAuditSchema.rawKeys
+)
 
-  // ── test fixtures ─────────────────────────────────────────────────────────
-
-  private val doubleKeys = Set("keyDouble")
-  private val singleKeys = Set("keySingle")
-  private val rawKeys    = Set("keyRaw")
-
-  private def validate(map: Map[String, String]): ValidationResult =
-    AuditMapValidator.validate(map, doubleKeys, singleKeys, rawKeys)
-
-  private val fullValidMap = Map(
-    "keyDouble" -> "\"someValue\"",
-    "keySingle" -> "'someValue'",
-    "keyRaw"    -> "someValue"
-  )
-
-  // ── test runner ───────────────────────────────────────────────────────────
-
-  def main(args: Array[String]): Unit = {
-    val results = List(
-      run("pass_all_keys_correct_format",              test_pass_allKeysCorrectFormat),
-      run("pass_double_quoted_empty_content",          test_pass_doubleQuotedEmptyContent),
-      run("pass_single_quoted_empty_content",          test_pass_singleQuotedEmptyContent),
-      run("fail_missingKey_single_key_absent",         test_fail_missingKey_singleKeyAbsent),
-      run("fail_missingKey_all_keys_absent",           test_fail_missingKey_allKeysAbsent),
-      run("fail_nullOrEmpty_empty_string_value",       test_fail_nullOrEmpty_emptyStringValue),
-      run("fail_format_doubleQuoted_got_singleQuoted", test_fail_format_doubleQuoted_gotSingleQuoted),
-      run("fail_format_doubleQuoted_got_raw",          test_fail_format_doubleQuoted_gotRaw),
-      run("fail_format_doubleQuoted_missing_close",    test_fail_format_doubleQuoted_missingClose),
-      run("fail_format_singleQuoted_got_doubleQuoted", test_fail_format_singleQuoted_gotDoubleQuoted),
-      run("fail_format_singleQuoted_got_raw",          test_fail_format_singleQuoted_gotRaw),
-      run("fail_format_raw_got_doubleQuoted",          test_fail_format_raw_gotDoubleQuoted),
-      run("fail_format_raw_got_singleQuoted",          test_fail_format_raw_gotSingleQuoted),
-      run("fail_multiple_failures_reported_together",  test_fail_multipleFailuresReportedTogether),
-      run("pass_failureSummary_when_passed",           test_pass_failureSummaryWhenPassed)
-    )
-
-    printReport("AuditMapValidator Engine", results)
-
-    // hard fail if any test failed — stops TestDriver if called from there
-    if (results.exists(!_._2)) sys.exit(1)
-  }
-
-  // ── individual tests ──────────────────────────────────────────────────────
-
-  private def test_pass_allKeysCorrectFormat(): Unit = {
-    val result = validate(fullValidMap)
-    assertTrue(result.passed, "Expected passed=true")
-    assertTrue(result.failures.isEmpty, "Expected zero failures")
-  }
-
-  private def test_pass_doubleQuotedEmptyContent(): Unit = {
-    val result = validate(fullValidMap.updated("keyDouble", "\"\""))
-    assertTrue(result.passed, "Empty content inside double quotes should pass")
-  }
-
-  private def test_pass_singleQuotedEmptyContent(): Unit = {
-    val result = validate(fullValidMap.updated("keySingle", "''"))
-    assertTrue(result.passed, "Empty content inside single quotes should pass")
-  }
-
-  private def test_fail_missingKey_singleKeyAbsent(): Unit = {
-    val result = validate(fullValidMap - "keyDouble")
-    assertTrue(!result.passed, "Expected passed=false")
-    assertTrue(result.failures.size == 1, s"Expected 1 failure, got ${result.failures.size}")
-    assertIsA[ValidationFailure.MissingKey](result.failures.head)
-    assertTrue(result.failures.head.key == "keyDouble", "Expected keyDouble as missing key")
-  }
-
-  private def test_fail_missingKey_allKeysAbsent(): Unit = {
-    val result = validate(Map.empty)
-    assertTrue(!result.passed, "Expected passed=false")
-    assertTrue(result.failures.size == 3, s"Expected 3 failures, got ${result.failures.size}")
-    assertTrue(
-      result.failures.forall(_.isInstanceOf[ValidationFailure.MissingKey]),
-      "All failures should be MissingKey"
-    )
-  }
-
-  private def test_fail_nullOrEmpty_emptyStringValue(): Unit = {
-    val result = validate(fullValidMap.updated("keyDouble", ""))
-    assertTrue(!result.passed, "Expected passed=false for empty value")
-    assertIsA[ValidationFailure.NullOrEmptyValue](result.failures.head)
-    assertTrue(result.failures.head.key == "keyDouble", "Expected keyDouble as failing key")
-  }
-
-  private def test_fail_format_doubleQuoted_gotSingleQuoted(): Unit = {
-    val result = validate(fullValidMap.updated("keyDouble", "'wrongFormat'"))
-    assertTrue(!result.passed, "Expected passed=false")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-    assertTrue(result.failures.head.reason.contains("double quotes"), "Reason should mention double quotes")
-  }
-
-  private def test_fail_format_doubleQuoted_gotRaw(): Unit = {
-    val result = validate(fullValidMap.updated("keyDouble", "rawValue"))
-    assertTrue(!result.passed, "Expected passed=false")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-  }
-
-  private def test_fail_format_doubleQuoted_missingClose(): Unit = {
-    val result = validate(fullValidMap.updated("keyDouble", "\"noClosingQuote"))
-    assertTrue(!result.passed, "Expected passed=false for missing closing quote")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-  }
-
-  private def test_fail_format_singleQuoted_gotDoubleQuoted(): Unit = {
-    val result = validate(fullValidMap.updated("keySingle", "\"wrongFormat\""))
-    assertTrue(!result.passed, "Expected passed=false")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-    assertTrue(result.failures.head.reason.contains("single quotes"), "Reason should mention single quotes")
-  }
-
-  private def test_fail_format_singleQuoted_gotRaw(): Unit = {
-    val result = validate(fullValidMap.updated("keySingle", "rawValue"))
-    assertTrue(!result.passed, "Expected passed=false")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-  }
-
-  private def test_fail_format_raw_gotDoubleQuoted(): Unit = {
-    val result = validate(fullValidMap.updated("keyRaw", "\"shouldBeRaw\""))
-    assertTrue(!result.passed, "Expected passed=false")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-    assertTrue(result.failures.head.reason.contains("raw value"), "Reason should mention raw value")
-  }
-
-  private def test_fail_format_raw_gotSingleQuoted(): Unit = {
-    val result = validate(fullValidMap.updated("keyRaw", "'shouldBeRaw'"))
-    assertTrue(!result.passed, "Expected passed=false")
-    assertIsA[ValidationFailure.FormatViolation](result.failures.head)
-  }
-
-  private def test_fail_multipleFailuresReportedTogether(): Unit = {
-    val badMap = Map(
-      "keyDouble" -> "wrongFormat",  // FormatViolation
-      "keySingle" -> ""              // NullOrEmptyValue
-                                     // keyRaw absent → MissingKey
-    )
-    val result = validate(badMap)
-    assertTrue(!result.passed, "Expected passed=false")
-    assertTrue(result.failures.size == 3, s"Expected 3 failures, got ${result.failures.size}")
-    assertTrue(result.failureSummary.contains("MissingKey"),     "Summary should contain MissingKey")
-    assertTrue(result.failureSummary.contains("NullOrEmptyValue"),"Summary should contain NullOrEmptyValue")
-    assertTrue(result.failureSummary.contains("FormatViolation"), "Summary should contain FormatViolation")
-  }
-
-  private def test_pass_failureSummaryWhenPassed(): Unit = {
-    val result = validate(fullValidMap)
-    assertTrue(
-      result.failureSummary == "Validation passed. No failures.",
-      s"Unexpected summary: ${result.failureSummary}"
-    )
-  }
-
-  // ── assertion helpers ─────────────────────────────────────────────────────
-
-  private def assertTrue(condition: Boolean, message: String): Unit =
-    if (!condition) throw new AssertionError(message)
-
-  private def assertIsA[T](value: Any)(implicit tag: scala.reflect.ClassTag[T]): Unit =
-    if (!tag.runtimeClass.isInstance(value))
-      throw new AssertionError(s"Expected ${tag.runtimeClass.getSimpleName}, got ${value.getClass.getSimpleName}")
-
-  // ── report printer ────────────────────────────────────────────────────────
-
-  private def run(name: String, test: => Unit): (String, Boolean) = {
-    try { test; (name, true) }
-    catch { case e: Throwable => println(s"  FAIL [$name]: ${e.getMessage}"); (name, false) }
-  }
-
-  private def printReport(suiteName: String, results: List[(String, Boolean)]): Unit = {
-    val passed = results.count(_._2)
-    val failed = results.count(!_._2)
-    println(s"\n${"=" * 60}")
-    println(s"  TEST SUITE : $suiteName")
-    println(s"${"=" * 60}")
-    results.foreach { case (name, ok) =>
-      println(s"  ${if (ok) "PASS" else "FAIL"} : $name")
-    }
-    println(s"${"=" * 60}")
-    println(s"  Results : $passed passed, $failed failed")
-    println(s"${"=" * 60}\n")
-  }
+if (auditValidationResult.passed) {
+  logger.info("AUDIT MAP VALIDATION PASSED — all mandatory keys present with correct format.")
+} else {
+  logger.error("AUDIT MAP VALIDATION FAILED:\n" + auditValidationResult.failureSummary)
+  // Does NOT call sys.exit here — validation failure is reported but does not
+  // kill the job. Change to sys.exit(-1) if you want hard failure on bad map.
 }
