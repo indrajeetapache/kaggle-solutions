@@ -1,87 +1,18 @@
 package org.example.validation
 
 /**
- * Generic, stateless validator for audit maps of type Map[String, String].
+ * Defines the expected value format for a key in the audit map.
  *
- * This is the core engine. It knows nothing about which framework it runs in.
- * It takes any map and any schema (3 key sets) and returns a ValidationResult.
- *
- * Validation order per key:
- *   1. Key present in map?        → else MissingKey failure
- *   2. Value non-null, non-empty? → else NullOrEmptyValue failure
- *   3. Value format correct?      → else FormatViolation failure
+ * DOUBLE_QUOTED  → value must start and end with "  e.g. "169912"
+ * SINGLE_QUOTED  → value must start and end with '  e.g. '169912'
+ * RAW            → value must NOT be wrapped in any quotes e.g. false, text
  *
  * Copy this file as-is. Do not modify.
  */
-object AuditMapValidator {
+sealed trait FormatType
 
-  /**
-   * Validates a Map[String, String] against a given schema.
-   *
-   * @param auditMap        the fully-built audit mapping keys map
-   * @param doubleQuotedKeys keys whose values must be wrapped in double quotes "..."
-   * @param singleQuotedKeys keys whose values must be wrapped in single quotes '...'
-   * @param rawKeys          keys whose values must NOT be quote-wrapped
-   * @return ValidationResult with passed=true and empty failures, or passed=false with all failures
-   */
-  def validate(
-      auditMap: Map[String, String],
-      doubleQuotedKeys: Set[String],
-      singleQuotedKeys: Set[String],
-      rawKeys: Set[String]
-  ): ValidationResult = {
-
-    val allRules: List[(String, FormatType)] =
-      doubleQuotedKeys.map(_ -> FormatType.DOUBLE_QUOTED).toList ++
-      singleQuotedKeys.map(_ -> FormatType.SINGLE_QUOTED).toList ++
-      rawKeys.map(_          -> FormatType.RAW).toList
-
-    val failures: List[ValidationFailure] = allRules.flatMap { case (key, expectedFormat) =>
-      validateKey(auditMap, key, expectedFormat)
-    }
-
-    ValidationResult(
-      passed   = failures.isEmpty,
-      failures = failures
-    )
-  }
-
-  // ---------- private ----------
-
-  private def validateKey(
-      auditMap: Map[String, String],
-      key: String,
-      expectedFormat: FormatType
-  ): Option[ValidationFailure] = {
-
-    auditMap.get(key) match {
-      case None =>
-        Some(ValidationFailure.MissingKey(key))
-
-      case Some(value) if value == null || value.isEmpty =>
-        Some(ValidationFailure.NullOrEmptyValue(key))
-
-      case Some(value) =>
-        checkFormat(key, value, expectedFormat)
-    }
-  }
-
-  private def checkFormat(
-      key: String,
-      value: String,
-      expectedFormat: FormatType
-  ): Option[ValidationFailure] = {
-
-    val isValid = expectedFormat match {
-      case FormatType.DOUBLE_QUOTED =>
-        value.startsWith("\"") && value.endsWith("\"") && value.length >= 2
-      case FormatType.SINGLE_QUOTED =>
-        value.startsWith("'") && value.endsWith("'") && value.length >= 2
-      case FormatType.RAW =>
-        !value.startsWith("\"") && !value.startsWith("'")
-    }
-
-    if (isValid) None
-    else Some(ValidationFailure.FormatViolation(key, expectedFormat, value))
-  }
+object FormatType {
+  case object DOUBLE_QUOTED extends FormatType
+  case object SINGLE_QUOTED extends FormatType
+  case object RAW           extends FormatType
 }
