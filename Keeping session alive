@@ -1,26 +1,86 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// AUDIT MAP VALIDATION — added in TestDriver only, zero touch to Driver.scala
-//
-// Paste this block AFTER line 130 (AuditIntegration.audit_final_call)
-// and BEFORE line 133 (if (staleDataJobFailStatus) sys.exit(1))
-//
-// audit_mapping_keys is fully built by this point (stages 1 + 2 both done).
-// ─────────────────────────────────────────────────────────────────────────────
+package org.example.validation.schema
 
-import org.example.validation.AuditMapValidator
-import org.example.validation.schema.FileIngestionAuditSchema
+/**
+ * Audit map schema for the File Ingestion Framework.
+ *
+ * THIS IS THE ONLY FILE OTHER FRAMEWORK TEAMS NEED TO REPLACE.
+ * - Change the package name to match your framework
+ * - Reassign the 3 key sets below based on your map's format contract
+ * - All keys across the 3 sets are treated as MANDATORY
+ *
+ * Format rules:
+ *   doubleQuotedKeys → value in map must be wrapped in "..."  e.g. "169912"
+ *   singleQuotedKeys → value in map must be wrapped in '...'  e.g. '169912'
+ *   rawKeys          → value must be bare, no quote wrapping   e.g. false, text
+ *
+ * No key should appear in more than one set.
+ *
+ * Keys sourced from TestDriver.scala audit_mapping_keys build:
+ *   Stage 1 (audit start block  ~line 81)  : region, frameworkName, frameworkVersion,
+ *     fid, sourceCsi, targetCsi, spark_application_name, appName, expectedFileCount,
+ *     execMode, totalNasToHdfsCopyTime, isSourceS3, impalaRefresh,
+ *     target, databaseName, tableName (conditional on target=hive/iceberg)
+ *   Stage 2 (audit end block   ~line 119)  : sourceType, src_rec_count, tgt_rec_count,
+ *     idempotentCriteriaMet, idempotentExecutionTime, inputFiles, reconciliation_metrics,
+ *     audit_pipeline_id, ctrlFileValEnabled, ctrlFileValStatus, dqpJsonString, dqpResponse,
+ *     failOnStale, enableStaleness, enableIdempotent, ctrlValFrmHeaderFooter,
+ *     ctrlCheckSumValEnabled, ctrlCountValEnabled, schemaValEnabled,
+ *     zeroRecProcEnabled, checkSumType, impalaExecTime
+ */
+object FileIngestionAuditSchema {
 
-val auditValidationResult = AuditMapValidator.validate(
-  auditMap         = audit_mapping_keys,
-  doubleQuotedKeys = FileIngestionAuditSchema.doubleQuotedKeys,
-  singleQuotedKeys = FileIngestionAuditSchema.singleQuotedKeys,
-  rawKeys          = FileIngestionAuditSchema.rawKeys
-)
+  /** Values expected to be wrapped in double quotes: "value" */
+  val doubleQuotedKeys: Set[String] = Set(
+    // Stage 1 — audit start block
+    "region",
+    "frameworkName",
+    "frameworkVersion",
+    "fid",
+    "sourceCsi",
+    "targetCsi",
+    "spark_application_name",
+    "appName",
+    "expectedFileCount",
+    "execMode",
+    "totalNasToHdfsCopyTime",
+    "target",
+    "databaseName",
+    "tableName",
+    // Stage 2 — audit end block
+    "inputFiles",
+    "reconciliation_metrics",
+    "audit_pipeline_id",
+    "ctrlFileValStatus",
+    "dqpJsonString",
+    "dqpResponse",
+    "impalaExecTime",
+    "src_rec_count",
+    "tgt_rec_count",
+    "checkSumType",
+    "idempotentExecutionTime"
+  )
 
-if (auditValidationResult.passed) {
-  logger.info("AUDIT MAP VALIDATION PASSED — all mandatory keys present with correct format.")
-} else {
-  logger.error("AUDIT MAP VALIDATION FAILED:\n" + auditValidationResult.failureSummary)
-  // Does NOT call sys.exit here — validation failure is reported but does not
-  // kill the job. Change to sys.exit(-1) if you want hard failure on bad map.
+  /** Values expected to be wrapped in single quotes: 'value' */
+  val singleQuotedKeys: Set[String] = Set(
+    // populate if any keys in your map carry 'value' format
+  )
+
+  /** Values expected to be raw (no quote wrapping): false, true, 0, text */
+  val rawKeys: Set[String] = Set(
+    // Stage 1 — audit start block
+    "isSourceS3",
+    "impalaRefresh",
+    // Stage 2 — audit end block
+    "sourceType",
+    "idempotentCriteriaMet",
+    "ctrlFileValEnabled",
+    "failOnStale",
+    "enableStaleness",
+    "enableIdempotent",
+    "ctrlValFrmHeaderFooter",
+    "ctrlCheckSumValEnabled",
+    "ctrlCountValEnabled",
+    "schemaValEnabled",
+    "zeroRecProcEnabled"
+  )
 }
