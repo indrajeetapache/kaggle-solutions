@@ -1,39 +1,24 @@
 package org.example.validation
 
 /**
- * Represents a single validation failure against the audit map.
+ * Result of validating an audit map against a schema.
  *
- * MissingKey       → mandatory key not found in map at all
- * NullOrEmptyValue → key exists but value is null or empty string
- * FormatViolation  → key exists, value non-empty, but quote format is wrong
+ * passed   → true only if zero failures
+ * failures → full list of what failed and why (empty if passed)
  *
- * Each failure carries the key and a human-readable reason.
+ * Usage:
+ *   val result = AuditMapValidator.validate(auditMap, schema)
+ *   if (!result.passed) result.failures.foreach(f => logger.error(f.reason))
+ *
  * Copy this file as-is. Do not modify.
  */
-sealed trait ValidationFailure {
-  def key: String
-  def reason: String
-}
+case class ValidationResult(
+    passed: Boolean,
+    failures: List[ValidationFailure]
+) {
 
-object ValidationFailure {
-
-  case class MissingKey(key: String) extends ValidationFailure {
-    val reason: String = s"Mandatory key '$key' is missing from the audit map."
-  }
-
-  case class NullOrEmptyValue(key: String) extends ValidationFailure {
-    val reason: String = s"Key '$key' is present but its value is null or empty."
-  }
-
-  case class FormatViolation(key: String, expectedFormat: FormatType, actualValue: String)
-      extends ValidationFailure {
-    val reason: String = expectedFormat match {
-      case FormatType.DOUBLE_QUOTED =>
-        s"Key '$key' must have a value wrapped in double quotes (\"). Actual value: [$actualValue]"
-      case FormatType.SINGLE_QUOTED =>
-        s"Key '$key' must have a value wrapped in single quotes ('). Actual value: [$actualValue]"
-      case FormatType.RAW =>
-        s"Key '$key' must have a raw value (no quote wrapping). Actual value: [$actualValue]"
-    }
-  }
+  /** Convenience: all failure reasons as a single formatted string. */
+  def failureSummary: String =
+    if (passed) "Validation passed. No failures."
+    else failures.map(f => s"  [${f.getClass.getSimpleName}] ${f.reason}").mkString("\n")
 }
